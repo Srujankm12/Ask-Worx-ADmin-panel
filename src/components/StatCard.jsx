@@ -1,22 +1,41 @@
 import React from 'react';
 
-const StatCard = ({ label, value, icon: Icon, color, trend }) => {
+// Tailwind can only generate a class if it appears as complete, literal
+// text somewhere in the source. Building `${color}/10` from a runtime
+// prop never produces that literal text, so it silently fails — that's
+// what caused the invisible icons. This map spells out every combination
+// as a full literal string instead, keyed by a plain semantic name.
+const TILE_STYLES = {
+  primary: 'bg-primary/10 text-primary',
+  warning: 'bg-warning/10 text-warning',
+  success: 'bg-success/10 text-success',
+  danger: 'bg-danger/10 text-danger',
+  slate600: 'bg-slate-600/10 text-slate-600',
+  slate400: 'bg-slate-400/10 text-slate-400',
+};
+
+const StatCard = ({ label, value, icon: Icon, color = 'primary', trend }) => {
+  const tileClass = TILE_STYLES[color] || TILE_STYLES.primary;
+
   return (
-    <div className="premium-card p-10 flex items-center gap-10 relative overflow-hidden group border-none shadow-[0_20px_50px_rgba(0,0,0,0.02)] hover:shadow-primary/10">
-      <div className={`absolute -right-4 -bottom-4 w-32 h-32 ${color} opacity-[0.05] rounded-full blur-3xl group-hover:opacity-[0.15] transition-opacity duration-700`}></div>
-      <div className="relative z-10 w-24 h-24 flex items-center justify-center group-hover:scale-110 transition-transform duration-700">
-        <div className={`absolute inset-0 ${color.replace('bg-', 'bg-')} opacity-20 blur-2xl rounded-full`}></div>
-        <Icon className={`w-12 h-12 ${color.replace('bg-', 'text-')} relative z-10 drop-shadow-lg`} />
-      </div>
-      <div className="relative z-10">
-        <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.4em] mb-2">{label}</p>
-        <div className="flex items-baseline gap-3">
-           <h3 className="text-4xl font-black text-slate-900 tracking-tighter tabular-nums">{value}</h3>
-           {trend && (
-             <span className={`pill-badge ${trend > 0 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'} shadow-none border border-current/10`}>
-               {trend > 0 ? '↗' : '↘'} {Math.abs(trend)}%
-             </span>
-           )}
+    <div className="bg-white border border-border rounded-lg p-5 shadow-card">
+      <div className="flex items-center gap-4">
+        <div className={`w-11 h-11 rounded-lg flex items-center justify-center shrink-0 ${tileClass}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-xs text-text-secondary">{label}</p>
+          <div className="flex items-baseline gap-2 mt-0.5">
+            <h3 className="text-xl font-bold text-text-primary tabular-nums">{value}</h3>
+            {trend != null && (
+              <span
+                className={`text-xs font-medium ${trend > 0 ? 'text-success' : 'text-danger'}`}
+              >
+                {trend > 0 ? '↑' : '↓'} {Math.abs(trend)}%
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>

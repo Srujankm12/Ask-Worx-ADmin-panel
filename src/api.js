@@ -6,26 +6,15 @@ const api = axios.create({
   baseURL: `${BASE_URL}/api`,
 });
 
-// Create a separate instance for login to use the full URL easily
-const authApi = axios.create({
-  baseURL: BASE_URL,
-});
-
 
 // For simplicity in this demo, we'll just check for a token in localStorage
 // Add ngrok-skip-browser-warning header for development
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('askworx_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
   if (config.baseURL && config.baseURL.includes('ngrok')) {
     config.headers['ngrok-skip-browser-warning'] = 'true';
   }
   return config;
 });
-
-export const login = (password) => authApi.post('/api/login', { password });
 
 export const getStats = () => api.get('/stats');
 export const getLeads = (params) => api.get('/leads', { params });

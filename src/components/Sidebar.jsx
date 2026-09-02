@@ -7,7 +7,6 @@ import {
   PhoneCall,
   MessageSquare,
   LogOut,
-  Cpu,
   Radio,
   ClipboardCheck,
   BookOpen,
@@ -48,57 +47,78 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
     { to: '/announcements', icon: Megaphone, label: 'Broadcast' },
   ];
 
+  // Nav item styling lives here (not in a separate .nav-link CSS class) so
+  // the active/hover states stay wired to the same design tokens as the
+  // rest of the CRM: primary-light background + primary text when active.
   const NavItem = ({ item }) => (
     <NavLink
       to={item.to}
       onClick={() => window.innerWidth < 1024 && setCollapsed(true)}
       className={({ isActive }) =>
-        `nav-link ${isActive ? 'active' : ''} ${collapsed ? 'justify-center px-0 py-6 mb-2' : ''}`
+        `flex items-center gap-3 rounded-lg mb-1 transition-colors ${
+          collapsed ? 'justify-center px-0 py-3' : 'px-4 py-2.5'
+        } ${
+          isActive
+            ? 'bg-primary-light text-primary font-medium'
+            : 'text-text-secondary hover:bg-background hover:text-text-primary'
+        }`
       }
       title={collapsed ? item.label : ''}
     >
-      <item.icon className={`w-5 h-5 opacity-80 shrink-0 ${collapsed ? 'scale-[1.3] text-white' : ''}`} />
-      {!collapsed && <span className="text-[11px] uppercase tracking-widest animate-in whitespace-nowrap font-black">{item.label}</span>}
+      <item.icon className="w-[18px] h-[18px] shrink-0" />
+      {!collapsed && (
+        <span className="text-sm whitespace-nowrap">{item.label}</span>
+      )}
     </NavLink>
   );
 
   return (
     <aside
-      className={`fixed lg:relative inset-y-0 left-0 bg-[#020617] transition-all duration-500 z-50 flex flex-col overflow-hidden shadow-2xl lg:shadow-none
-        ${collapsed ? 'w-0 -translate-x-full lg:w-24 lg:translate-x-0' : 'w-72 translate-x-0'}`}
+      className={`fixed lg:relative inset-y-0 left-0 bg-white border-r border-border transition-all duration-300 z-50 flex flex-col overflow-hidden shadow-sm lg:shadow-none
+        ${collapsed ? 'w-0 -translate-x-full lg:w-20 lg:translate-x-0' : 'w-64 translate-x-0'}`}
     >
-      <div className={`flex items-center gap-4 transition-all duration-500 overflow-hidden ${collapsed ? 'pt-10 px-0 justify-center' : 'p-10'}`}>
-        <img 
-          src="/logo.png" 
-          alt="Logo" 
-          className={`transition-all duration-500 object-contain ${collapsed ? 'w-10 h-10' : 'w-12 h-12'}`} 
+      <div className={`flex items-center gap-3 h-16 border-b border-border transition-all duration-300 overflow-hidden ${collapsed ? 'px-0 justify-center' : 'px-6'}`}>
+        <img
+          src="/logo.png"
+          alt="Logo"
+          className={`transition-all duration-300 object-contain ${collapsed ? 'w-8 h-8' : 'w-9 h-9'}`}
         />
         {!collapsed && (
-          <div className="animate-in whitespace-nowrap">
-            <h1 className="font-black text-2xl leading-none text-white tracking-tighter uppercase">ASKworX</h1>
-          </div>
+          <h1 className="font-bold text-lg leading-none text-text-primary whitespace-nowrap">
+            ASKworX
+          </h1>
         )}
       </div>
 
-      <nav className="flex-1 mt-6 overflow-y-auto no-scrollbar">
-        <div className="px-6 mb-4">
-          {!collapsed && <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4">Core Systems</p>}
+      <nav className="flex-1 mt-4 overflow-y-auto no-scrollbar">
+        <div className="px-3 mb-6">
+          {!collapsed && (
+            <p className="px-3 text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
+              Core Systems
+            </p>
+          )}
           {mainItems.map((item) => <NavItem key={item.to} item={item} />)}
         </div>
 
-        <div className="px-6 mt-8">
-          {!collapsed && <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4">Team Hub</p>}
+        <div className="px-3">
+          {!collapsed && (
+            <p className="px-3 text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
+              Team Hub
+            </p>
+          )}
           {employeeItems.map((item) => <NavItem key={item.to} item={item} />)}
         </div>
       </nav>
 
-      <div className={`transition-all duration-500 ${collapsed ? 'p-0 pb-12 flex justify-center' : 'p-10'}`}>
+      <div className={`border-t border-border transition-all duration-300 ${collapsed ? 'py-4 flex justify-center' : 'p-4'}`}>
         <button
           onClick={handleLogout}
-          className={`flex items-center gap-4 text-slate-500 hover:text-white transition-all text-left font-black text-[10px] uppercase tracking-[0.2em] ${collapsed ? 'justify-center border-t border-white/5 pt-10 w-full' : 'w-full'}`}
+          className={`flex items-center gap-3 text-text-secondary hover:text-danger transition-colors text-sm font-medium ${
+            collapsed ? 'justify-center' : 'w-full px-3 py-2'
+          }`}
           title={collapsed ? 'Exit' : ''}
         >
-          <LogOut className={`w-5 h-5 shrink-0 ${collapsed ? 'scale-[1.3] text-red-400' : ''}`} />
+          <LogOut className="w-[18px] h-[18px] shrink-0" />
           {!collapsed && <span className="whitespace-nowrap">Exit Session</span>}
         </button>
       </div>
