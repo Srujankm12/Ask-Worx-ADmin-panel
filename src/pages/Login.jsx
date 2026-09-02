@@ -1,107 +1,146 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, ShieldCheck, ArrowRight } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 
+import { login } from '../api';
+
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { EASE } from '../lib/motion';
+
+/**
+ * The sign-in sheet. Ink ground, drawing grid, the mark centred on it.
+ *
+ * The form authenticates for real: it posts to /api/login and stores the
+ * returned token, which every subsequent API call sends as a Bearer header.
+ * It previously navigated straight to the dashboard without contacting the
+ * server at all, while the server rejected every unauthenticated request — so
+ * the panel signed you in and then showed you nothing.
+ *
+ * There is no way past this screen. A build-time bypass lived here while the
+ * API was unreachable; the API runs now, so the only route in is a password
+ * the server accepts.
+ */
 const Login = () => {
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = (e) => {
-    e.preventDefault();
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSubmitting(true);
 
-    // Authentication disabled.
-    // No password validation.
-    // No backend login API call.
-    // Directly navigate to the dashboard.
-    navigate('/');
+    try {
+      await login(password);
+      navigate('/', { replace: true });
+    } catch (err) {
+      // Distinguish "wrong password" from "server unreachable" — they need
+      // two completely different things from the person reading this.
+      setError(
+        err?.response?.status === 401
+          ? 'That password is not correct. Please try again.'
+          : 'Could not reach the server. Check your connection, then try again.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] flex items-center justify-center p-6 relative overflow-hidden">
-      {/* Background Cyber Effects */}
-      <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-primary/10 blur-[120px] rounded-full -mr-64 -mt-64"></div>
-      <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-secondary/10 blur-[120px] rounded-full -ml-64 -mb-64"></div>
-      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-[0.03]"></div>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-ink p-6">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid-paper-inverse" />
 
-      <div className="w-full max-w-[440px] relative z-10 animate-in">
-        <div className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-24 h-24 mb-8 transition-transform hover:scale-110">
-            <img
-              src="/logo.png"
-              alt="ASKworX Logo"
-              className="w-full h-full object-contain shadow-2xl"
-            />
-          </div>
+      {/* A single soft pool of light behind the mark. Decorative. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute left-1/2 top-1/2 size-[640px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-champagne/[0.05] blur-[140px]"
+      />
 
-          <h1 className="text-4xl font-black text-white tracking-tighter mb-3 uppercase">
-            ASKworX
+      <motion.div
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: EASE }}
+        className="relative z-10 w-full max-w-[420px]"
+      >
+        <div className="flex flex-col items-center text-center">
+          {/* logo-mark is the evenly trimmed artwork — the master logo.png sits
+              ~11% left of centre, so it must not be used where it is centred. */}
+          <img src="/logo.png" alt="ASKworX" className="mb-8 h-16 w-auto object-contain" />
+
+          <h1 className="font-heading text-4xl font-extrabold uppercase leading-none tracking-tight">
+            <span className="titanium-sheen-dark">ASKworX</span>
           </h1>
 
-          <div className="flex items-center justify-center gap-3">
-            <div className="h-px w-8 bg-white/10"></div>
-
-            <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-500">
-              Admin Login
+          <div className="mt-4 flex items-center gap-3">
+            <span aria-hidden="true" className="h-px w-8 bg-white/15" />
+            <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-300">
+              WhatsApp Business Console
             </span>
-
-            <div className="h-px w-8 bg-white/10"></div>
+            <span aria-hidden="true" className="h-px w-8 bg-white/15" />
           </div>
         </div>
 
-        <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[40px] border border-white/5 shadow-2xl relative group overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
-
-          <form onSubmit={handleLogin} className="space-y-8 relative z-10">
-            <div className="space-y-6">
-              <div className="relative group">
-                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-primary transition-colors">
-                  <Lock className="w-5 h-5" />
-                </div>
-
-                <input
-                  type="password"
-                  placeholder="Password"
-                  className="w-full bg-white/5 border border-white/10 rounded-[20px] pl-14 pr-6 py-5 text-white font-bold outline-none focus:border-primary/50 focus:ring-4 focus:ring-primary/10 transition-all placeholder:text-slate-600"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
+        <div className="mt-10 rounded-2xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-champagne-600">
+                Password
+              </Label>
+              <Input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                placeholder="••••••••"
+                required
+                aria-invalid={error ? 'true' : undefined}
+                aria-describedby={error ? 'password-error' : undefined}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className="border-white/15 bg-white/[0.04] text-champagne-100 placeholder:text-titanium-700 focus-visible:border-champagne focus-visible:ring-champagne/15"
+              />
             </div>
 
-            <button
+            {error && (
+              <p
+                id="password-error"
+                role="alert"
+                className="flex items-start gap-2 text-[13px] leading-relaxed text-[#E5766B]"
+              >
+                <AlertCircle className="mt-1 size-4 shrink-0" />
+                {error}
+              </p>
+            )}
+
+            <Button
               type="submit"
-              className="w-full bg-gradient-to-r from-primary via-indigo-600 to-secondary text-white font-black py-5 rounded-[22px] shadow-xl shadow-primary/20 hover:shadow-primary/40 transition-all flex items-center justify-center gap-3 uppercase tracking-widest text-[11px] relative overflow-hidden group/btn"
+              size="lg"
+              disabled={submitting || !password}
+              className="group w-full bg-champagne text-ink hover:bg-champagne-100"
             >
-              <div className="absolute inset-0 bg-white/10 translate-y-full group-hover/btn:translate-y-0 transition-transform duration-300"></div>
-
-              <span className="relative z-10">
-                Login Now
-              </span>
-
-              <ArrowRight className="w-4 h-4 relative z-10 group-hover/btn:translate-x-1 transition-transform" />
-            </button>
+              {submitting ? (
+                <>
+                  <Loader2 className="animate-spin" />
+                  Signing in
+                </>
+              ) : (
+                <>
+                  Sign in
+                  <ArrowRight className="transition-transform duration-300 group-hover:translate-x-1" />
+                </>
+              )}
+            </Button>
           </form>
+
         </div>
 
-        <div className="mt-10 flex flex-col items-center gap-6">
-          <div className="flex items-center gap-2 text-slate-600">
-            <ShieldCheck className="w-4 h-4 opacity-30" />
-
-            <span className="text-[9px] font-black uppercase tracking-[0.2em] opacity-40">
-              AES-256 Encrypted Protocol
-            </span>
-          </div>
-
-          <p className="text-[10px] text-slate-700 font-bold uppercase tracking-widest text-center">
-            Proprietary Intelligence System of <br />
-
-            <span className="text-slate-500">
-              ASKworX Smart Automation
-            </span>
-          </p>
-        </div>
-      </div>
+        <p className="mt-8 text-center font-mono text-[10px] tracking-[0.18em] uppercase text-titanium-700">
+          ASKworX Smart Automation
+        </p>
+      </motion.div>
     </div>
   );
 };

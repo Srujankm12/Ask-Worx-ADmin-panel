@@ -85,9 +85,9 @@ try {
 
   setModal({
     open: true,
-    title: 'Broadcast Launched! 🚀',
+    title: 'Announcement sent',
     message:
-      'Your official announcement is now being pushed to the team via WhatsApp.',
+      'Your team is receiving it on WhatsApp now.',
     type: 'success'
   });
 
@@ -96,11 +96,12 @@ try {
 
   setTimeout(() => fetchHistory(), 2000);
 } catch (err) {
+  console.error(err);
   setModal({
     open: true,
-    title: 'Launch Failed',
+    title: 'Could not send the announcement',
     message:
-      'We encountered an error while attempting the broadcast. Please check your connection.',
+      'Nothing was sent. Check your connection and try again — nobody has received a partial message.',
     type: 'error'
   });
 } finally {
@@ -113,7 +114,7 @@ selectedPhones.length > 0
 ? selectedPhones.length
 : employees.length;
 
-return ( <div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in flex flex-col gap-10 overflow-y-auto no-scrollbar pb-12">
+return ( <div className="flex flex-col gap-8">
 
   <Modal
     isOpen={modal.open}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Modal from '../components/Modal';
 import { getContacts, getChatHistory, sendMessage, saveContact } from '../api';
 import { useSearchParams } from 'react-router-dom';
 import { Send, Search, MessageSquare, ArrowLeft, Edit2, Check, X } from 'lucide-react';
@@ -13,6 +14,7 @@ const [messages, setMessages] = useState([]);
 const [newMessage, setNewMessage] = useState('');
 const [searchTerm, setSearchTerm] = useState('');
 const [loadingHistory, setLoadingHistory] = useState(false);
+  const [modal, setModal] = useState({ open: false, title: '', message: '', type: 'success' });
 const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
 const [isEditingName, setIsEditingName] = useState(false);
 const [editedName, setEditedName] = useState('');
@@ -138,7 +140,14 @@ try {
 
   setTimeout(scrollToBottom, 50);
 } catch (err) {
-  alert('Failed to send message');
+  console.error(err);
+  setModal({
+    open: true,
+    title: 'Message not sent',
+    message:
+      'WhatsApp only allows a free-form reply within 24 hours of the customer\u2019s last message. After that an approved template is required.',
+    type: 'error',
+  });
 }
 
 };
@@ -161,7 +170,13 @@ try {
     name: editedName
   }));
 } catch (err) {
-  alert('Failed to save name');
+  console.error(err);
+  setModal({
+    open: true,
+    title: 'Could not save the name',
+    message: 'Nothing was changed. Please try again.',
+    type: 'error',
+  });
 }
 
 };
@@ -173,7 +188,14 @@ const filteredContacts = contacts.filter(c =>
 c.phone.includes(searchTerm)
 );
 
-return ( <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-background animate-in">
+return ( <div className="flex h-[calc(100vh-9rem)] overflow-hidden rounded-xl border border-border bg-white shadow-card">
+<Modal
+  isOpen={modal.open}
+  onClose={() => setModal({ ...modal, open: false })}
+  title={modal.title}
+  message={modal.message}
+  type={modal.type}
+/>
 
   {/* Search / Contact List Sidebar */}
 
@@ -536,7 +558,16 @@ return ( <div className="flex h-[calc(100vh-80px)] overflow-hidden bg-background
           onScroll={handleScroll}
         >
 
-          {messages.map((msg, idx) => {
+          {loadingHistory && (
+            <div className="flex items-center justify-center gap-3 py-10">
+              <span className="size-4 animate-spin rounded-full border-2 border-line border-t-ink" />
+              <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-700">
+                Loading conversation
+              </span>
+            </div>
+          )}
+
+          {!loadingHistory && messages.map((msg, idx) => {
 
             const content =
               msg.content ||

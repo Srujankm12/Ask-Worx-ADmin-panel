@@ -1,7 +1,20 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { Menu, User } from 'lucide-react';
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+  useLocation,
+} from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
+import { Menu, PanelLeftClose, User } from 'lucide-react';
+
 import Sidebar from './components/Sidebar';
+import { TOKEN_KEY } from './api';
+import { PageTransition } from './components/motion/PageTransition';
+
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Leads from './pages/Leads';
 import Callbacks from './pages/Callbacks';
@@ -10,6 +23,7 @@ import Messages from './pages/Messages';
 import Campaigns from './pages/Campaigns';
 
 // Internal Management Pages
+import Team from './pages/Team';
 import Employees from './pages/Employees';
 import Attendance from './pages/Attendance';
 import WorkPlans from './pages/WorkPlans';
@@ -19,223 +33,149 @@ import Reminders from './pages/Reminders';
 import Announcements from './pages/Announcements';
 import BotConfig from './pages/BotConfig';
 
-const Layout = ({ children }) => {
-const [collapsed, setCollapsed] = React.useState(false);
+/**
+ * Every routed page renders inside this shell: ink rail on the left, a
+ * hairline-ruled title block across the top, white working area below.
+ *
+ * It is a layout *route*, so it stays mounted across navigations — that is
+ * what lets the sidebar keep its collapsed state and lets the active rail
+ * slide from one item to the next instead of remounting at the new position.
+ */
+const Layout = () => {
+  // Start collapsed on small screens so the rail never covers the work.
+  const [collapsed, setCollapsed] = React.useState(
+    () => typeof window !== 'undefined' && window.innerWidth < 1024,
+  );
 
-return ( <div className="flex h-screen bg-[#F8F9FB] overflow-hidden text-slate-950">
+  return (
+    <div className="flex h-screen overflow-hidden bg-white text-body-text">
+      {/* Scrim — only on mobile, where the rail overlays the page. */}
+      {!collapsed && (
+        <div
+          aria-hidden="true"
+          onClick={() => setCollapsed(true)}
+          className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-[2px] transition-opacity lg:hidden"
+        />
+      )}
 
-```
-  {!collapsed && (
-    <div
-      className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40 lg:hidden transition-opacity"
-      onClick={() => setCollapsed(true)}
-    />
-  )}
+      <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
 
-  <Sidebar
-    collapsed={collapsed}
-    setCollapsed={setCollapsed}
-  />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Title block. Hairline rule, mono labels — the top of a drawing sheet. */}
+        <header className="z-30 flex h-16 shrink-0 items-center justify-between gap-4 border-b border-border bg-white px-5 md:px-8">
+          <div className="flex min-w-0 items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setCollapsed((value) => !value)}
+              aria-label={collapsed ? 'Open navigation' : 'Close navigation'}
+              className="-ml-2 rounded-lg p-2 text-titanium-700 transition-colors hover:bg-paper hover:text-ink"
+            >
+              {collapsed ? <Menu className="size-5" /> : <PanelLeftClose className="size-5" />}
+            </button>
 
-  <div className="flex-1 flex flex-col min-w-0 transition-all duration-500">
+            <span className="hidden font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-700 sm:block">
+              WhatsApp Business Console
+            </span>
+          </div>
 
-    <header className="h-20 bg-white border-b border-slate-100 flex items-center justify-between px-6 lg:px-10 shrink-0 z-30">
+          <div className="flex items-center gap-3">
+            <div className="hidden text-right md:block">
+              <p className="font-mono text-[10px] leading-none tracking-[0.18em] uppercase text-titanium-700">
+                Administrator
+              </p>
+              <p className="mt-1 font-heading text-[13px] font-bold uppercase leading-none tracking-tight text-ink">
+                ASKworX
+              </p>
+            </div>
 
-      <div className="flex items-center gap-6">
+            <div className="flex size-9 items-center justify-center rounded-lg bg-ink text-champagne-100">
+              <User className="size-4" />
+            </div>
+          </div>
+        </header>
 
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-3 hover:bg-slate-50 rounded-2xl transition-all active:scale-90"
-        >
-          <Menu className="w-6 h-6 text-slate-600" />
-        </button>
-
-        <div className="hidden sm:block">
-          <span className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-400 block mb-0.5">
-            Control Center
-          </span>
-        </div>
+        <main className="relative flex-1 overflow-y-auto bg-white">
+          <AnimatedOutlet />
+        </main>
       </div>
+    </div>
+  );
+};
 
-      <div className="flex items-center gap-4">
+/**
+ * Only the page body animates. AnimatePresence needs a key that changes with
+ * the route, otherwise React reuses the same element and the outgoing page
+ * never gets a chance to leave.
+ */
+const AnimatedOutlet = () => {
+  const location = useLocation();
 
-        <div className="text-right hidden md:block">
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <PageTransition key={location.pathname} className="container-admin">
+        <Outlet />
+      </PageTransition>
+    </AnimatePresence>
+  );
+};
 
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">
-            Admin Panel
-          </p>
+const ROUTES = [
+  { path: '/', element: <Dashboard /> },
+  { path: '/config', element: <BotConfig /> },
+  { path: '/campaigns', element: <Campaigns /> },
+  { path: '/leads', element: <Leads /> },
+  { path: '/callbacks', element: <Callbacks /> },
+  { path: '/contacts', element: <Contacts /> },
+  { path: '/messages', element: <Messages /> },
+  { path: '/team', element: <Team /> },
 
-          <p className="text-xs font-bold text-slate-900">
-            ASKworX
-          </p>
+  // Superseded by /team. Kept so existing bookmarks resolve rather than
+  // bouncing to the dashboard; they are no longer in the navigation.
+  { path: '/reminders', element: <Reminders /> },
+  { path: '/announcements', element: <Announcements /> },
+  { path: '/employees', element: <Employees /> },
+  { path: '/attendance', element: <Attendance /> },
+  { path: '/work-plans', element: <WorkPlans /> },
+  { path: '/eod-reports', element: <EODReports /> },
+  { path: '/leave-requests', element: <LeaveRequests /> },
+  { path: '/announcements', element: <Announcements /> },
+];
 
-        </div>
+/**
+ * Gate. Without a token every API call comes back 401 and the operator lands
+ * on a panel of empty tables with no explanation — sending them to sign in
+ * first is the only honest thing to show.
+ */
+const RequireAuth = ({ children }) => {
+  const location = useLocation();
+  const token = localStorage.getItem(TOKEN_KEY);
 
-        <div className="w-10 h-10 rounded-2xl bg-slate-900 flex items-center justify-center text-white shadow-lg">
-          <User className="w-5 h-5" />
-        </div>
-
-      </div>
-
-    </header>
-
-    <main className="flex-1 overflow-y-auto relative bg-[#F8F9FB] no-scrollbar">
-      <div className="animate-in">
-        {children}
-      </div>
-    </main>
-
-  </div>
-
-</div>
-
-
-);
+  if (!token) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  return children;
 };
 
 function App() {
-return ( <Router>
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={<Login />} />
 
+        <Route
+          element={
+            <RequireAuth>
+              <Layout />
+            </RequireAuth>
+          }
+        >
+          {ROUTES.map((route) => (
+            <Route key={route.path} path={route.path} element={route.element} />
+          ))}
+        </Route>
 
-  <Routes>
-
-    <Route
-path="/"
-      element={
-        <Layout>
-          <Dashboard />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/leads"
-      element={
-        <Layout>
-          <Leads />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/callbacks"
-      element={
-        <Layout>
-          <Callbacks />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/contacts"
-      element={
-        <Layout>
-          <Contacts />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/messages"
-      element={
-        <Layout>
-          <Messages />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/campaigns"
-      element={
-        <Layout>
-          <Campaigns />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/employees"
-      element={
-        <Layout>
-          <Employees />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/attendance"
-      element={
-        <Layout>
-          <Attendance />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/work-plans"
-      element={
-        <Layout>
-          <WorkPlans />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/eod-reports"
-      element={
-        <Layout>
-          <EODReports />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/leave-requests"
-      element={
-        <Layout>
-          <LeaveRequests />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/reminders"
-      element={
-        <Layout>
-          <Reminders />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/announcements"
-      element={
-        <Layout>
-          <Announcements />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="/config"
-      element={
-        <Layout>
-          <BotConfig />
-        </Layout>
-      }
-    />
-
-    <Route
-      path="*"
-      element={<Navigate to="/" replace />}
-    />
-
-  </Routes>
-
-</Router>
-
-
-);
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Router>
+  );
 }
 
 export default App;
