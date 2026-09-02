@@ -1,5 +1,6 @@
 import React from 'react';
-import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   Users,
@@ -8,118 +9,182 @@ import {
   MessageSquare,
   LogOut,
   Radio,
-  ClipboardCheck,
-  BookOpen,
-  BarChart3,
-  CalendarRange,
-  Clock,
-  Megaphone,
   UserCircle,
-  Settings2
+  Settings2,
 } from 'lucide-react';
 
+import { cn } from '../lib/utils';
+import { logout } from '../api';
+
+/**
+ * Navigation, ordered the way the established WhatsApp Business platforms
+ * order theirs (WATI, Interakt, respond.io, AiSensy all converge on this):
+ *
+ *   1. A flat list. None of them nest, and none of them label a section that
+ *      holds one item — which is what "Team Management → Team" was.
+ *   2. Grouped by hairline rule, not by heading. Seven text headings over
+ *      eight items is more chrome than navigation, and a rule is this
+ *      system's own device (DESIGN.md §5).
+ *   3. Ordered by how often it is opened, not by how the database is shaped.
+ *      The inbox is the surface an operator lives in, so it sits at the top,
+ *      under the overview.
+ *   4. Named for the job, not the table. Every one of those platforms says
+ *      Inbox, Contacts, Broadcasts and Automation; not Messages, Campaigns
+ *      and Bot Config.
+ *
+ * `divider: true` opens a new band above the item.
+ */
+const NAV_ITEMS = [
+  { to: '/', icon: LayoutDashboard, label: 'Overview' },
+
+  // Day-to-day customer contact.
+  { to: '/messages', icon: MessageSquare, label: 'Inbox', divider: true },
+  { to: '/contacts', icon: Users, label: 'Contacts' },
+  { to: '/campaigns', icon: Radio, label: 'Broadcasts' },
+
+  // Things a customer has asked for and somebody owes them an answer.
+  { to: '/leads', icon: UserPlus, label: 'Leads', divider: true },
+  { to: '/callbacks', icon: PhoneCall, label: 'Callbacks' },
+
+  // Configuration, opened rarely — so it sits at the bottom.
+  { to: '/config', icon: Settings2, label: 'Automation', divider: true },
+  { to: '/team', icon: UserCircle, label: 'Team' },
+];
+
+/**
+ * Hoisted rather than declared inside <Sidebar> so React keeps the same
+ * element type between renders — otherwise the whole nav remounts on every
+ * collapse and the shared-layout rail has nothing to animate from.
+ */
+const NavItem = ({ item, collapsed, setCollapsed }) => (
+  <NavLink
+    to={item.to}
+    end={item.to === '/'}
+    onClick={() => window.innerWidth < 1024 && setCollapsed(true)}
+    title={collapsed ? item.label : undefined}
+    className={({ isActive }) =>
+      cn(
+        'group relative mb-0.5 flex items-center gap-3 rounded-lg transition-colors duration-200',
+        collapsed ? 'justify-center px-0 py-2.5' : 'px-2 py-2.5',
+        isActive
+          ? 'bg-white/[0.07] text-champagne-100'
+          : 'text-titanium-300 hover:bg-white/[0.04] hover:text-champagne-100',
+      )
+    }
+  >
+    {({ isActive }) => (
+      <>
+        {/* The rail that marks where you are. It slides between items rather
+            than blinking on, so the move reads as one continuous position. */}
+        {isActive && (
+          <motion.span
+            layoutId="sidebar-rail"
+            aria-hidden="true"
+            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+            className="absolute inset-y-1 left-0 w-[3px] rounded-full bg-champagne"
+          />
+        )}
+
+        <item.icon className="size-[18px] shrink-0" />
+
+        {!collapsed && (
+          <span className="whitespace-nowrap text-[13px] font-medium">{item.label}</span>
+        )}
+      </>
+    )}
+  </NavLink>
+);
+
+/**
+ * The one ink panel in the app.
+ *
+ * DESIGN.md asks for ink to be used sparingly and for the moments that carry
+ * weight; in a tool the navigation is that moment — it is the only surface
+ * present on every screen, so it anchors the sheet while the working area
+ * stays white. Champagne text on ink, titanium grid behind it.
+ *
+ * ── The left rail ─────────────────────────────────────────────────────────
+ * Two vertical lines, and only two.
+ *
+ *   CONTENT     16px — the wordmark, the group labels, every nav icon, the
+ *                      sign-out icon. Achieved as px-2 on each group plus
+ *                      px-2 on each row, and px-4 on the header, which has no
+ *                      group wrapper of its own.
+ *   BACKGROUND   8px — the row highlight and the active rail. They belong to
+ *                      the row, not to the text column, so they are held one
+ *                      step outside the content line; that offset is what
+ *                      lets the column still read as a column.
+ *
+ * It previously ran on three unrelated edges — the logo at 20px, the labels
+ * and icons at 24px, the rail at 12px — which is what made the group headings
+ * look adrift from the items beneath them.
+ *
+ * Label text lands at 16 + 18 (icon) + 14 (gap-3) = 48px, matching the
+ * header's logo-to-wordmark gap. Collapsed, every row centres on the same
+ * 40px axis because the inset is px-2 in both states.
+ */
 const Sidebar = ({ collapsed, setCollapsed }) => {
   const navigate = useNavigate();
-  const location = useLocation();
 
   const handleLogout = () => {
-    localStorage.removeItem('askworx_token');
-    navigate('/login');
+    logout();
+    navigate('/login', { replace: true });
   };
-
-  const mainItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/config', icon: Settings2, label: 'Bot Brain' },
-    { to: '/campaigns', icon: Radio, label: 'Campaigns' },
-    { to: '/leads', icon: UserPlus, label: 'Leads' },
-    { to: '/callbacks', icon: PhoneCall, label: 'Callbacks' },
-    { to: '/contacts', icon: Users, label: 'Contacts' },
-    { to: '/messages', icon: MessageSquare, label: 'Messages' },
-  ];
-
-  const employeeItems = [
-    { to: '/employees', icon: UserCircle, label: 'Employees' },
-    { to: '/attendance', icon: ClipboardCheck, label: 'Attendance' },
-    { to: '/work-plans', icon: BookOpen, label: 'Work Plans' },
-    { to: '/eod-reports', icon: BarChart3, label: 'EOD Reports' },
-    { to: '/leave-requests', icon: CalendarRange, label: 'Leaves' },
-    { to: '/reminders', icon: Clock, label: 'Reminders' },
-    { to: '/announcements', icon: Megaphone, label: 'Broadcast' },
-  ];
-
-  // Nav item styling lives here (not in a separate .nav-link CSS class) so
-  // the active/hover states stay wired to the same design tokens as the
-  // rest of the CRM: primary-light background + primary text when active.
-  const NavItem = ({ item }) => (
-    <NavLink
-      to={item.to}
-      onClick={() => window.innerWidth < 1024 && setCollapsed(true)}
-      className={({ isActive }) =>
-        `flex items-center gap-3 rounded-lg mb-1 transition-colors ${
-          collapsed ? 'justify-center px-0 py-3' : 'px-4 py-2.5'
-        } ${
-          isActive
-            ? 'bg-primary-light text-primary font-medium'
-            : 'text-text-secondary hover:bg-background hover:text-text-primary'
-        }`
-      }
-      title={collapsed ? item.label : ''}
-    >
-      <item.icon className="w-[18px] h-[18px] shrink-0" />
-      {!collapsed && (
-        <span className="text-sm whitespace-nowrap">{item.label}</span>
-      )}
-    </NavLink>
-  );
 
   return (
     <aside
-      className={`fixed lg:relative inset-y-0 left-0 bg-white border-r border-border transition-all duration-300 z-50 flex flex-col overflow-hidden shadow-sm lg:shadow-none
-        ${collapsed ? 'w-0 -translate-x-full lg:w-20 lg:translate-x-0' : 'w-64 translate-x-0'}`}
+      className={cn(
+        'fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden bg-ink transition-[width,transform] duration-300 lg:relative',
+        collapsed ? 'w-0 -translate-x-full lg:w-20 lg:translate-x-0' : 'w-[268px] translate-x-0',
+      )}
     >
-      <div className={`flex items-center gap-3 h-16 border-b border-border transition-all duration-300 overflow-hidden ${collapsed ? 'px-0 justify-center' : 'px-6'}`}>
+      {/* Drawing grid, inverted for the ink ground. Decorative — hidden from AT. */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 grid-paper-inverse" />
+
+      <div
+        className={cn(
+          'relative flex h-16 shrink-0 items-center gap-3 border-b border-white/10 transition-all duration-300',
+          collapsed ? 'justify-center px-0' : 'px-4',
+        )}
+      >
         <img
           src="/logo.png"
-          alt="Logo"
-          className={`transition-all duration-300 object-contain ${collapsed ? 'w-8 h-8' : 'w-9 h-9'}`}
+          alt=""
+          className={cn('object-contain transition-all duration-300', collapsed ? 'size-8' : 'size-9')}
         />
         {!collapsed && (
-          <h1 className="font-bold text-lg leading-none text-text-primary whitespace-nowrap">
+          <span className="font-heading text-lg font-extrabold uppercase leading-none tracking-tight text-champagne-100">
             ASKworX
-          </h1>
+          </span>
         )}
       </div>
 
-      <nav className="flex-1 mt-4 overflow-y-auto no-scrollbar">
-        <div className="px-3 mb-6">
-          {!collapsed && (
-            <p className="px-3 text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
-              Core Systems
-            </p>
-          )}
-          {mainItems.map((item) => <NavItem key={item.to} item={item} />)}
-        </div>
-
-        <div className="px-3">
-          {!collapsed && (
-            <p className="px-3 text-[11px] font-semibold text-text-secondary uppercase tracking-wide mb-2">
-              Team Hub
-            </p>
-          )}
-          {employeeItems.map((item) => <NavItem key={item.to} item={item} />)}
-        </div>
+      <nav className="relative flex-1 overflow-y-auto no-scrollbar px-2 py-4">
+        {NAV_ITEMS.map((item) => (
+          <React.Fragment key={item.to}>
+            {item.divider && (
+              <hr
+                aria-hidden="true"
+                className={cn('border-0 border-t border-white/10', collapsed ? 'mx-2 my-3' : 'my-3')}
+              />
+            )}
+            <NavItem item={item} collapsed={collapsed} setCollapsed={setCollapsed} />
+          </React.Fragment>
+        ))}
       </nav>
 
-      <div className={`border-t border-border transition-all duration-300 ${collapsed ? 'py-4 flex justify-center' : 'p-4'}`}>
+      <div className="relative border-t border-white/10 p-2">
         <button
+          type="button"
           onClick={handleLogout}
-          className={`flex items-center gap-3 text-text-secondary hover:text-danger transition-colors text-sm font-medium ${
-            collapsed ? 'justify-center' : 'w-full px-3 py-2'
-          }`}
-          title={collapsed ? 'Exit' : ''}
+          title={collapsed ? 'Sign out' : undefined}
+          className={cn(
+            'flex w-full items-center gap-3 rounded-lg py-2.5 text-[13px] font-medium text-titanium-300 transition-colors hover:bg-white/[0.04] hover:text-champagne-100',
+            collapsed ? 'justify-center px-0' : 'px-2',
+          )}
         >
-          <LogOut className="w-[18px] h-[18px] shrink-0" />
-          {!collapsed && <span className="whitespace-nowrap">Exit Session</span>}
+          <LogOut className="size-[18px] shrink-0" />
+          {!collapsed && <span className="whitespace-nowrap">Sign out</span>}
         </button>
       </div>
     </aside>

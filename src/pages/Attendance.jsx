@@ -6,7 +6,6 @@ import { ClipboardCheck, Search } from 'lucide-react';
 const Attendance = () => {
 const [records, setRecords] = useState([]);
 const [loading, setLoading] = useState(true);
-const [searchTerm, setSearchTerm] = useState('');
 
 const [total, setTotal] = useState(0);
 const [page, setPage] = useState(0);
@@ -36,7 +35,7 @@ offset: page * 10,
 }
 };
 
-return ( <div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in h-[calc(100vh-80px)] flex flex-col overflow-hidden">
+return ( <div className="flex flex-col">
 
   {/* ================= HEADER ================= */}
 

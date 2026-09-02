@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Modal from '../components/Modal';
 import { getCallbacks, markCallbackDone } from '../api';
 import { format } from 'date-fns';
 import { formatSlug } from '../utils';
@@ -6,6 +7,7 @@ import { formatSlug } from '../utils';
 const Callbacks = () => {
 const [callbacks, setCallbacks] = useState([]);
 const [loading, setLoading] = useState(true);
+const [modal, setModal] = useState({ open: false, title: '', message: '', type: 'success' });
 
 useEffect(() => {
 fetchCallbacks();
@@ -34,12 +36,31 @@ await markCallbackDone(id);
     )
   );
 } catch (err) {
-  alert('Update failed');
+  console.error(err);
+  // Put the row back: the optimistic update above already marked it done, and
+  // leaving it there would show a success the server never accepted.
+  setCallbacks((current) =>
+    current.map((c) => (c.id === id ? { ...c, status: 'pending' } : c)),
+  );
+  setModal({
+    open: true,
+    title: 'Could not mark it done',
+    message:
+      'The callback is still showing as pending. Nothing was changed — check your connection and try again.',
+    type: 'error',
+  });
 }
 
 };
 
-return ( <div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in h-[calc(100vh-80px)] flex flex-col overflow-hidden">
+return ( <div className="flex flex-col">
+<Modal
+  isOpen={modal.open}
+  onClose={() => setModal({ ...modal, open: false })}
+  title={modal.title}
+  message={modal.message}
+  type={modal.type}
+/>
 
   {/* ================= HEADER ================= */}
 

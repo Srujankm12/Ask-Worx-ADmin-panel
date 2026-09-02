@@ -87,9 +87,9 @@ try {
 
   setModal({
     open: true,
-    title: 'Reminder Set! ⏰',
+    title: 'Reminder scheduled',
     message:
-      'Your team member will receive a WhatsApp notification at the scheduled time.',
+      'The bot will send it on WhatsApp at the time you set.',
     type: 'success'
   });
 
@@ -103,11 +103,13 @@ try {
 
 } catch (err) {
 
+  console.error(err);
+
   setModal({
     open: true,
-    title: 'Scheduling Failed',
+    title: 'Could not schedule the reminder',
     message:
-      'We could not schedule the reminder. Please verify the date and try again.',
+      'Nothing was saved. Check that the date and time are in the future, then try again.',
     type: 'error'
   });
 
@@ -149,7 +151,7 @@ switch (status) {
 
 return (
 
-<div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in flex flex-col gap-10 overflow-y-auto no-scrollbar pb-12">
+<div className="flex flex-col gap-8">
 
   <Modal
     isOpen={modal.open}

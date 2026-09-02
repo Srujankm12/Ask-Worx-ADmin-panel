@@ -1,57 +1,59 @@
 import React from 'react';
-import { X, CheckCircle2, AlertCircle, Info } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
+import { Dialog, DialogBody, DialogFooter } from './ui/dialog';
+import { Button } from './ui/button';
+
+const TYPES = {
+  success: {
+    Icon: CheckCircle2,
+    tile: 'bg-success-light text-success',
+    eyebrow: 'Saved',
+  },
+  error: {
+    Icon: AlertCircle,
+    tile: 'bg-danger-light text-danger',
+    eyebrow: 'Not saved',
+  },
+  info: {
+    Icon: Info,
+    tile: 'bg-champagne-100 text-ink',
+    eyebrow: 'Notice',
+  },
+};
+
+/** Result acknowledgement. One action, no decisions to make. */
 const Modal = ({ isOpen, onClose, title, message, type = 'success' }) => {
-  if (!isOpen) return null;
-
-  const getIcon = () => {
-    switch (type) {
-      case 'success': return <CheckCircle2 className="w-12 h-12 text-emerald-500" />;
-      case 'error': return <AlertCircle className="w-12 h-12 text-rose-500" />;
-      default: return <Info className="w-12 h-12 text-blue-500" />;
-    }
-  };
-
-  const getButtonBg = () => {
-    switch (type) {
-      case 'success': return 'bg-emerald-500 shadow-emerald-500/20';
-      case 'error': return 'bg-rose-500 shadow-rose-500/20';
-      default: return 'bg-slate-900 shadow-slate-900/20';
-    }
-  };
+  const config = TYPES[type] || TYPES.info;
+  const { Icon } = config;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="bg-white rounded-[40px] w-full max-w-md p-10 shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-10 duration-500 relative">
-        <button 
-          onClick={onClose}
-          className="absolute top-8 right-8 p-2 hover:bg-slate-50 rounded-xl transition-all text-slate-300 hover:text-slate-900"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-        <div className="flex flex-col items-center text-center">
-          <div className="mb-8 p-6 bg-slate-50 rounded-[32px]">
-            {getIcon()}
-          </div>
-          
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight mb-3">
-            {title}
-          </h2>
-          
-          <p className="text-sm font-bold text-slate-400 leading-relaxed mb-10 max-w-[280px]">
-            {message}
-          </p>
-
-          <button
-            onClick={onClose}
-            className={`w-full py-5 rounded-[24px] text-white font-black text-xs uppercase tracking-[0.3em] transition-all hover:scale-[1.02] active:scale-95 shadow-xl ${getButtonBg()}`}
-          >
-            Acknowledged
-          </button>
+    <Dialog open={!!isOpen} onClose={onClose} size="sm" labelledBy="modal-title">
+      <DialogBody className="px-8 pb-2 pt-8">
+        <div className={`flex size-12 items-center justify-center rounded-xl ${config.tile}`}>
+          <Icon className="size-6" />
         </div>
-      </div>
-    </div>
+
+        <p className="eyebrow mt-6">{config.eyebrow}</p>
+
+        <h2
+          id="modal-title"
+          className="mt-2 font-heading text-2xl font-extrabold uppercase tracking-tight text-ink"
+        >
+          {title}
+        </h2>
+
+        {message && (
+          <p className="mt-3 max-w-[46ch] text-sm leading-relaxed text-body-text">{message}</p>
+        )}
+      </DialogBody>
+
+      <DialogFooter className="border-t-0 bg-white px-8 pb-8 pt-4">
+        <Button onClick={onClose} className="w-full">
+          Close
+        </Button>
+      </DialogFooter>
+    </Dialog>
   );
 };
 

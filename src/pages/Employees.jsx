@@ -48,17 +48,18 @@ try {
 
   setModal({
     open: true,
-    title: 'Team Member Added! 🏆',
-    message: `${formData.name} has been successfully onboarded to the ASKworX internal system.`,
+    title: 'Employee added',
+    message: `${formData.name} can now use the WhatsApp bot to check in, file a day plan and request leave.`,
     type: 'success'
   });
 
   fetchEmployees();
 } catch (err) {
+  console.error(err);
   setModal({
     open: true,
-    title: 'Onboarding Failed',
-    message: 'Could not register the employee. Please check the network or phone number format.',
+    title: 'Could not add the employee',
+    message: 'Nothing was saved. Check that the number starts with a country code and is not already in use, then try again.',
     type: 'error'
   });
 }
@@ -75,22 +76,23 @@ try {
 
   setModal({
     open: true,
-    title: 'Member Removed',
-    message: 'The team member has been successfully removed from the system.',
+    title: 'Employee removed',
+    message: 'They no longer have access to the bot. Their attendance and leave history stays on record.',
     type: 'success'
   });
 } catch (err) {
+  console.error(err);
   setModal({
     open: true,
-    title: 'Removal Failed',
-    message: 'There was an issue removing the record from the database.',
+    title: 'Could not remove the employee',
+    message: 'Nothing was changed — they still have access. Please try again.',
     type: 'error'
   });
 }
 
 };
 
-return ( <div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in h-[calc(100vh-80px)] flex flex-col overflow-hidden">
+return ( <div className="flex flex-col">
 
   <Modal
     isOpen={modal.open}
@@ -106,7 +108,7 @@ return ( <div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in h-[calc(
     onConfirm={confirmDelete}
     title="Remove Team Member?"
     message="This action will permanently revoke their access to the ASKworX internal hub. This cannot be undone."
-    confirmText="Remove Member"
+    confirmText="Remove employee"
   />
 
 

@@ -30,6 +30,7 @@ const EMPTY_POSTER = {
 };
 
 import Modal from '../components/Modal';
+import ConfirmModal from '../components/ConfirmModal';
 
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState([]);
@@ -44,6 +45,7 @@ export default function Campaigns() {
   const [uploadSource, setUploadSource] = useState('url'); // 'url' or 'local'
   const [uploading, setUploading] = useState(false);
   const [modal, setModal] = useState({ open: false, title: '', message: '', type: 'success' });
+  const [confirmCancel, setConfirmCancel] = useState(null);
 
   // Smarter base URL: use current origin if deployed
   const API_BASE = import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.includes('localhost')
@@ -116,8 +118,8 @@ export default function Campaigns() {
         if (!form.localFile) {
           setModal({
             open: true,
-            title: 'File Required',
-            message: 'Please select an image to upload before submitting.',
+            title: 'Choose an image first',
+            message: 'A poster campaign needs an image. Pick one, or switch to Image URL if it is already online.',
             type: 'error'
           });
           setSubmitting(false);
@@ -136,17 +138,19 @@ export default function Campaigns() {
       setModal({
         open: true,
         title: 'Campaign scheduled',
-        message: 'Your broadcast has been successfully queued in the system.',
+        message: 'It will go out at the time you set. You can cancel it from this page until then.',
         type: 'success'
       });
       setShowForm(false);
       setForm(EMPTY_QUIZ);
       load();
     } catch (e) {
+      console.error(e);
       setModal({
         open: true,
-        title: 'Creation Failed',
-        message: e?.response?.data || 'Failed to create campaign. Please try again.',
+        title: 'Could not schedule the campaign',
+        message:
+          'Nothing was scheduled. Check that every required field is filled in and the send time is in the future, then try again.',
         type: 'error'
       });
     } finally {
@@ -155,16 +159,18 @@ export default function Campaigns() {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to cancel this campaign?')) return;
+  const handleDelete = async () => {
+    const camp = confirmCancel;
+    if (!camp) return;
     try {
-      await deleteCampaign(id);
+      await deleteCampaign(camp.id);
       load();
     } catch (err) {
+      console.error(err);
       setModal({
         open: true,
-        title: 'Cancellation Failed',
-        message: 'There was an issue stopping the campaign. Please refresh and try again.',
+        title: 'Could not cancel the campaign',
+        message: 'The campaign is still scheduled and will go out as planned. Refresh the page and try again.',
         type: 'error'
       });
     }
@@ -177,7 +183,13 @@ export default function Campaigns() {
       try {
         const { data } = await getCampaignAnalytics(camp.id);
         setAnalytics(prev => ({ ...prev, [camp.id]: data }));
-      } catch { }
+      } catch (err) {
+        // An empty catch left the panel spinning on nothing, with no way to
+        // tell a campaign with no responses from one whose figures failed to
+        // load. The marker lets the panel say which.
+        console.error(err);
+        setAnalytics(prev => ({ ...prev, [camp.id]: { failed: true } }));
+      }
     }
   };
 
@@ -208,7 +220,21 @@ export default function Campaigns() {
   );
 
   return (
-    <div className="p-6 lg:p-10 max-w-5xl mx-auto">
+    <div className="max-w-5xl">
+      <ConfirmModal
+        isOpen={!!confirmCancel}
+        onClose={() => setConfirmCancel(null)}
+        onConfirm={handleDelete}
+        type="danger"
+        title="Cancel this campaign?"
+        message={
+          confirmCancel
+            ? `It will not be sent, and it cannot be brought back — you would need to create it again. Anyone who has already received it keeps the message.`
+            : ''
+        }
+        confirmText="Cancel campaign"
+      />
+
       <Modal
         isOpen={modal.open}
         onClose={() => setModal({ ...modal, open: false })}
@@ -301,10 +327,22 @@ export default function Campaigns() {
                     <input
                       type="file"
                       accept="image/*"
+                      disabled={uploading}
                       onChange={(e) => setForm(f => ({ ...f, localFile: e.target.files[0] }))}
                       className="w-full border border-dashed border-border rounded-lg p-4 bg-background text-sm text-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary-light file:text-primary hover:file:bg-primary/20"
                     />
-                    {form.localFile && <p className="mt-2 text-xs text-success font-medium flex items-center gap-1"><CheckCircle className="w-3 h-3" /> {form.localFile.name} selected</p>}
+                    {uploading ? (
+                      <p className="mt-2 flex items-center gap-2 text-xs font-medium text-text-secondary">
+                        <span className="size-3 animate-spin rounded-full border-2 border-line border-t-ink" />
+                        Uploading the image — this can take a moment on a slow connection.
+                      </p>
+                    ) : (
+                      form.localFile && (
+                        <p className="mt-2 text-xs text-success font-medium flex items-center gap-1">
+                          <CheckCircle className="w-3 h-3" /> {form.localFile.name} selected
+                        </p>
+                      )
+                    )}
                   </div>
                 )}
                 {field('caption', 'Caption (optional)', { textarea: true, placeholder: 'Add a message to accompany the image...' })}
@@ -403,7 +441,7 @@ export default function Campaigns() {
                     )}
                     {camp.status === 'scheduled' && (
                       <button
-                        onClick={() => handleDelete(camp.id)}
+                        onClick={() => setConfirmCancel(camp)}
                         className="p-2 text-danger hover:bg-danger-light rounded-lg transition-colors"
                       >
                         <Trash2 className="w-4 h-4" />

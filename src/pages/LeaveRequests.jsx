@@ -56,19 +56,20 @@ await updateLeaveStatus(id, status);
     open: true,
     title:
       status === 'Approved'
-        ? 'Leave Approved ✅'
-        : 'Leave Rejected ❌',
+        ? 'Leave approved'
+        : 'Leave rejected',
     message: `The employee has been notified via WhatsApp that their leave request was ${status.toLowerCase()}.`,
     type: status === 'Approved' ? 'success' : 'error'
   });
 
   fetchRequests();
 } catch (err) {
+  console.error(err);
   setModal({
     open: true,
-    title: 'Action Failed',
+    title: 'Could not update the request',
     message:
-      'There was an error communicating with the server. Please try again.',
+      'Nothing was changed and the employee has not been notified. Please try again.',
     type: 'error'
   });
 }
@@ -88,7 +89,7 @@ return 'bg-success-light text-success border-success/10';
 
 };
 
-return ( <div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in h-[calc(100vh-80px)] flex flex-col overflow-hidden">
+return ( <div className="flex flex-col">
 
   <Modal
     isOpen={modal.open}

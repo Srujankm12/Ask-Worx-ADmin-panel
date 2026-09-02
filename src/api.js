@@ -1,20 +1,59 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'https://askworxautomation-production.up.railway.app';
+/**
+ * Set VITE_API_URL (no trailing /api — the client appends it). The fallback is
+ * the local Go server, not a deployed host: a hardcoded production URL here is
+ * how the panel ended up silently pointing at a Railway app that no longer
+ * exists, with no error anywhere to say so.
+ */
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+
+export const TOKEN_KEY = 'askworx_token';
 
 const api = axios.create({
   baseURL: `${BASE_URL}/api`,
 });
 
-
-// For simplicity in this demo, we'll just check for a token in localStorage
-// Add ngrok-skip-browser-warning header for development
+/**
+ * Every /api route behind AuthMiddleware requires `Authorization: Bearer
+ * <API_SECRET>`; without this header the server answers 401 and the panel
+ * renders empty tables with no explanation. The token is issued by
+ * POST /api/login and held in localStorage.
+ */
 api.interceptors.request.use((config) => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
   if (config.baseURL && config.baseURL.includes('ngrok')) {
     config.headers['ngrok-skip-browser-warning'] = 'true';
   }
   return config;
 });
+
+/**
+ * An expired or missing token has to send the operator back to sign in rather
+ * than leaving them on a page that silently shows nothing.
+ */
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401 && !window.location.pathname.startsWith('/login')) {
+      localStorage.removeItem(TOKEN_KEY);
+      window.location.assign('/login');
+    }
+    return Promise.reject(error);
+  },
+);
+
+export const login = async (password) => {
+  const { data } = await api.post('/login', { password });
+  if (!data?.token) throw new Error('The server did not return a session token.');
+  localStorage.setItem(TOKEN_KEY, data.token);
+  return data.token;
+};
+
+export const logout = () => localStorage.removeItem(TOKEN_KEY);
 
 export const getStats = () => api.get('/stats');
 export const getLeads = (params) => api.get('/leads', { params });

@@ -1,1058 +1,533 @@
-import React, { useState, useEffect } from 'react';
-import {
-UserPlus,
-Send,
-Search,
-X,
-MessageSquare,
-Trash2,
-Bell,
-BellOff,
-Users,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { format, formatDistanceToNow, parseISO } from 'date-fns';
+import { UserPlus, Search, MessageSquare, Trash2, AlertCircle, Send } from 'lucide-react';
 
 import { getContacts, saveContact, sendMessage, deleteContact, toggleOptOut } from '../api';
 import { formatSlug } from '../utils';
 
+import PageHeader from '../components/PageHeader';
+import StatCard from '../components/StatCard';
+import Modal from '../components/Modal';
+import ConfirmModal from '../components/ConfirmModal';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { Card } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Textarea } from '../components/ui/textarea';
+import { Switch } from '../components/ui/switch';
+import { Tabs } from '../components/ui/tabs';
+import { Dialog, DialogHeader, DialogBody, DialogFooter } from '../components/ui/dialog';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '../components/ui/table';
+import { Reveal } from '../components/motion/Reveal';
+
+/**
+ * Contacts — everyone who has messaged the WhatsApp bot.
+ *
+ * Rebuilt from a version that reported every outcome through `alert()` and
+ * asked for delete confirmation through `window.confirm()`. Both are browser
+ * chrome that looks nothing like the app, cannot say what is about to happen,
+ * and get clicked through on reflex — on a screen where one of the actions
+ * permanently removes a customer.
+ */
+
+const FILTERS = [
+  { value: 'all', label: 'All contacts', help: 'Everyone who has ever messaged the bot.' },
+  {
+    value: 'subscribed',
+    label: 'Receiving broadcasts',
+    help: 'These contacts will receive any announcement or campaign you send.',
+  },
+  {
+    value: 'opted-out',
+    label: 'Opted out',
+    help: 'These contacts asked not to receive broadcasts. They are skipped automatically — you can still message them one to one.',
+  },
+];
+
+// WhatsApp rejects a free-form message outside a 24-hour window after the
+// customer's last message, so the limit is worth showing before sending.
+const MESSAGE_LIMIT = 1000;
+
 const Contacts = () => {
-const [contacts, setContacts] = useState([]);
-const [loading, setLoading] = useState(true);
-const [searchTerm, setSearchTerm] = useState('');
+  const navigate = useNavigate();
 
-// Add Contact Modal State
-const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-const [newContact, setNewContact] = useState({
-name: '',
-phone: '',
-});
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
 
-// Send Message Modal State
-const [isMsgModalOpen, setIsMsgModalOpen] = useState(false);
-const [targetContact, setTargetContact] = useState(null);
-const [message, setMessage] = useState('');
+  const [modal, setModal] = useState({ open: false, title: '', message: '', type: 'success' });
+  const [dialog, setDialog] = useState(null);
+  const [messageTarget, setMessageTarget] = useState(null);
+  const [messageBody, setMessageBody] = useState('');
+  const [sending, setSending] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [pendingOptOut, setPendingOptOut] = useState(null);
 
-useEffect(() => {
-fetchContacts();
-}, []);
+  const notify = (title, message, type = 'success') =>
+    setModal({ open: true, title, message, type });
 
-const fetchContacts = async () => {
-try {
-const resp = await getContacts();
-setContacts(resp.data || []);
-} catch (err) {
-console.error(err);
-} finally {
-setLoading(false);
-}
-};
+  const load = useCallback(async () => {
+    setLoadError('');
+    try {
+      const resp = await getContacts();
+      setContacts(Array.isArray(resp.data) ? resp.data : []);
+    } catch (err) {
+      console.error(err);
+      setLoadError(
+        'Could not load contacts. The server did not respond — check your connection and try again.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-const handleAddContact = async (e) => {
-e.preventDefault();
+  useEffect(() => {
+    load();
+  }, [load]);
 
-if (!newContact.phone.trim()) return;
+  const summary = useMemo(
+    () => ({
+      total: contacts.length,
+      subscribed: contacts.filter((c) => !c.opt_out).length,
+      optedOut: contacts.filter((c) => c.opt_out).length,
+    }),
+    [contacts],
+  );
 
-try {
-  await saveContact(newContact);
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return contacts
+      .filter((c) => {
+        if (filter === 'subscribed' && c.opt_out) return false;
+        if (filter === 'opted-out' && !c.opt_out) return false;
+        if (!q) return true;
+        return (
+          (c.name || '').toLowerCase().includes(q) ||
+          (c.company || '').toLowerCase().includes(q) ||
+          (c.phone || '').includes(q)
+        );
+      })
+      .sort((a, b) => new Date(b.joined_at) - new Date(a.joined_at));
+  }, [contacts, search, filter]);
 
-  setIsAddModalOpen(false);
-  setNewContact({
-    name: '',
-    phone: '',
-  });
+  const activeFilter = FILTERS.find((f) => f.value === filter) || FILTERS[0];
 
-  fetchContacts();
-} catch (err) {
-  alert('Failed to add contact');
-}
-};
+  // ── Actions ───────────────────────────────────────────────────────────────
 
-const handleSendMessage = async (e) => {
-e.preventDefault();
+  const handleAddContact = async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const name = form.get('name');
 
-if (!targetContact || !message.trim()) return;
+    try {
+      await saveContact({ name, phone: form.get('phone'), company: form.get('company') });
+      setDialog(null);
+      await load();
+      notify('Contact saved', `${name || 'The contact'} can now be included in broadcasts.`);
+    } catch (err) {
+      console.error(err);
+      notify(
+        'Could not save the contact',
+        'Nothing was saved. Check that the number is not already on the list, then try again.',
+        'error',
+      );
+    }
+  };
 
-try {
-  await sendMessage(targetContact.phone, message);
+  const handleSendMessage = async (event) => {
+    event.preventDefault();
+    if (!messageTarget || !messageBody.trim()) return;
 
-  setIsMsgModalOpen(false);
-  setMessage('');
+    setSending(true);
+    try {
+      await sendMessage(messageTarget.phone, messageBody);
+      setDialog(null);
+      setMessageBody('');
+      notify('Message sent', `Delivered to ${messageTarget.name || messageTarget.phone} on WhatsApp.`);
+    } catch (err) {
+      console.error(err);
+      notify(
+        'Could not send the message',
+        'Nothing was sent. WhatsApp only allows a free-form reply within 24 hours of the customer’s last message — after that a template is required.',
+        'error',
+      );
+    } finally {
+      setSending(false);
+    }
+  };
 
-  alert('Message sent successfully');
-} catch (err) {
-  alert('Failed to send message');
-}
+  const handleDelete = async () => {
+    try {
+      await deleteContact(confirmDelete.id);
+      await load();
+      notify('Contact deleted', `${confirmDelete.name || confirmDelete.phone} has been removed.`);
+    } catch (err) {
+      console.error(err);
+      notify('Could not delete the contact', 'Nothing was changed. Please try again.', 'error');
+    }
+  };
 
-};
+  const handleOptOut = async (contact) => {
+    // Optimistic, because a switch that waits on the network reads as broken.
+    // Reverted below if the server disagrees.
+    const next = !contact.opt_out;
+    setContacts((current) =>
+      current.map((c) => (c.id === contact.id ? { ...c, opt_out: next } : c)),
+    );
+    setPendingOptOut(contact.id);
 
-const handleDeleteContact = async (id) => {
-const confirmed = window.confirm(
-'Are you sure you want to delete this contact? They will no longer receive marketing broadcasts.'
-);
+    try {
+      await toggleOptOut(contact.id, next);
+    } catch (err) {
+      console.error(err);
+      setContacts((current) =>
+        current.map((c) => (c.id === contact.id ? { ...c, opt_out: !next } : c)),
+      );
+      notify(
+        'Could not change the subscription',
+        'The setting has been put back as it was. Please try again.',
+        'error',
+      );
+    } finally {
+      setPendingOptOut(null);
+    }
+  };
 
-if (!confirmed) return;
+  const openMessage = (contact) => {
+    setMessageTarget(contact);
+    setMessageBody('');
+    setDialog('message');
+  };
 
-try {
-  await deleteContact(id);
-  fetchContacts();
-} catch (err) {
-  alert('Failed to delete contact');
-}
-
-};
-
-const handleToggleOptOut = async (id, currentStatus) => {
-try {
-await toggleOptOut(id, !currentStatus);
-fetchContacts();
-} catch (err) {
-alert('Failed to update subscription status');
-}
-};
-
-const filteredContacts = contacts.filter((contact) => {
-const name = (contact.name || '').toLowerCase();
-const phone = contact.phone || '';
-
-return (
-  name.includes(searchTerm.toLowerCase()) ||
-  phone.includes(searchTerm)
-);
-
-});
-
-return ( <div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in h-[calc(100vh-80px)] flex flex-col overflow-hidden">
-
-  {/* ================= HEADER ================= */}
-
-  <div className="flex flex-col lg:flex-row justify-between lg:items-end gap-8 mb-10 shrink-0">
-
-    <div>
-      <div className="flex items-center gap-3 mb-3">
-        <div className="px-3 py-1 bg-primary-light rounded-full">
-          <span className="text-[10px] font-medium uppercase tracking-widest text-primary">
-            Contacts Management
-          </span>
-        </div>
+  if (loading) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
+        <div className="size-7 animate-spin rounded-full border-2 border-line border-t-ink" />
+        <p className="font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-700">
+          Loading contacts
+        </p>
       </div>
+    );
+  }
 
-      <h1 className="text-4xl lg:text-5xl font-semibold text-text-primary tracking-tight leading-none">
-        Customer Contacts
-      </h1>
+  return (
+    <>
+      <Modal
+        isOpen={modal.open}
+        onClose={() => setModal({ ...modal, open: false })}
+        title={modal.title}
+        message={modal.message}
+        type={modal.type}
+      />
 
-      <p className="text-sm text-text-secondary mt-4 max-w-xl">
-        Manage your contact directory, communication preferences and direct messages.
-      </p>
-    </div>
+      <ConfirmModal
+        isOpen={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={handleDelete}
+        type="danger"
+        title="Delete this contact?"
+        message={
+          confirmDelete
+            ? `${confirmDelete.name || confirmDelete.phone} will be removed from the contact list and from every future broadcast. Their past conversation stays on record. This cannot be undone.`
+            : ''
+        }
+        confirmText="Delete contact"
+      />
 
+      <PageHeader
+        eyebrow="Customers"
+        title="Contacts"
+        intro="Everyone who has messaged the WhatsApp bot. They are added automatically on first contact — you only need to add someone by hand if they have not written in yet."
+        action={
+          <Button onClick={() => setDialog('add')}>
+            <UserPlus />
+            Add contact
+          </Button>
+        }
+      />
 
-    <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
-
-      {/* Search */}
-
-      <div className="relative">
-        <Search
-          className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary"
-        />
-
-        <input
-          type="text"
-          placeholder="Search contacts..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="
-            w-full sm:w-64
-            bg-white
-            border border-border
-            pl-11 pr-4 py-3
-            rounded-lg
-            text-xs
-            text-text-primary
-            outline-none
-            transition-colors
-            focus:border-primary
-            placeholder:text-text-secondary
-          "
-        />
-      </div>
-
-
-      {/* Add Contact */}
-
-      <button
-        onClick={() => setIsAddModalOpen(true)}
-        className="
-          flex items-center justify-center gap-2
-          bg-primary
-          text-white
-          px-5 py-3
-          rounded-lg
-          text-[10px]
-          font-medium
-          uppercase
-          tracking-widest
-          hover:bg-primary-hover
-          active:scale-[0.98]
-          transition-all
-        "
-      >
-        <UserPlus className="w-4 h-4" />
-
-        Add Contact
-      </button>
-
-
-      {/* Total */}
-
-      <div className="sm:border-l sm:border-border sm:pl-6 text-left sm:text-right">
-        <span className="text-[10px] font-medium uppercase tracking-widest text-text-secondary block mb-1">
-          Total Contacts
-        </span>
-
-        <span className="text-3xl font-semibold text-text-primary tracking-tight tabular-nums">
-          {filteredContacts.length}
-        </span>
-      </div>
-
-    </div>
-
-  </div>
-
-
-  {/* ================= MAIN TABLE ================= */}
-
-  <div
-    className="
-      flex-1
-      overflow-hidden
-      bg-white
-      shadow-card
-      border border-border
-      rounded-lg
-      flex
-      flex-col
-      min-h-0
-    "
-  >
-
-    <div className="flex-1 overflow-auto">
-
-      <table className="w-full text-left border-collapse min-w-[900px]">
-
-        <thead className="sticky top-0 z-10">
-
-          <tr
-            className="
-              text-text-secondary
-              text-[10px]
-              font-medium
-              uppercase
-              tracking-widest
-              bg-background
-              border-b
-              border-border
-            "
-          >
-            <th className="px-10 py-6">
-              Contact
-            </th>
-
-            <th className="px-10 py-6">
-              Phone Number
-            </th>
-
-            <th className="px-10 py-6">
-              Subscription
-            </th>
-
-            <th className="px-10 py-6">
-              Engagement
-            </th>
-
-            <th className="px-10 py-6 text-right">
-              Actions
-            </th>
-          </tr>
-
-        </thead>
-
-
-        <tbody className="divide-y divide-border">
-
-          {filteredContacts.map((contact, idx) => (
-
-            <tr
-              key={contact.id || idx}
-              className="
-                group
-                hover:bg-background
-                transition-colors
-              "
+      {loadError && (
+        <div
+          role="alert"
+          className="mb-6 flex items-start gap-3 rounded-xl border border-danger/25 bg-danger-light px-4 py-3"
+        >
+          <AlertCircle aria-hidden="true" className="mt-1 size-4 shrink-0 text-danger" />
+          <div>
+            <p className="text-[13px] font-medium text-danger">{loadError}</p>
+            <button
+              type="button"
+              onClick={load}
+              className="mt-1 text-[13px] font-medium text-danger underline underline-offset-2"
             >
-
-              {/* Contact */}
-
-              <td className="px-10 py-7">
-
-                <div className="flex items-center gap-4">
-
-                  <div
-                    className="
-                      w-11 h-11
-                      rounded-lg
-                      bg-primary-light
-                      text-primary
-                      flex
-                      items-center
-                      justify-center
-                      font-semibold
-                      text-sm
-                      shrink-0
-                    "
-                  >
-                    {(contact.name || 'A')[0].toUpperCase()}
-                  </div>
-
-
-                  <div className="flex flex-col">
-
-                    <span
-                      className="
-                        font-semibold
-                        text-text-primary
-                        text-sm
-                        tracking-tight
-                        capitalize
-                      "
-                    >
-                      {contact.name
-                        ? formatSlug(contact.name)
-                        : 'Anonymous User'}
-                    </span>
-
-
-                    <span
-                      className="
-                        text-[10px]
-                        text-text-secondary
-                        font-medium
-                        uppercase
-                        tracking-widest
-                        mt-1
-                      "
-                    >
-                      Contact Record
-                    </span>
-
-                  </div>
-
-                </div>
-
-              </td>
-
-
-              {/* Phone */}
-
-              <td className="px-10 py-7">
-
-                <span
-                  className="
-                    text-xs
-                    font-medium
-                    text-text-primary
-                  "
-                >
-                  +{contact.phone}
-                </span>
-
-              </td>
-
-
-              {/* Subscription */}
-
-              <td className="px-10 py-7">
-
-                {contact.opt_out ? (
-
-                  <span
-                    className="
-                      px-3 py-1.5
-                      rounded-full
-                      text-[9px]
-                      font-medium
-                      uppercase
-                      tracking-widest
-                      bg-warning-light
-                      text-warning
-                    "
-                  >
-                    Opted Out
-                  </span>
-
-                ) : (
-
-                  <span
-                    className="
-                      px-3 py-1.5
-                      rounded-full
-                      text-[9px]
-                      font-medium
-                      uppercase
-                      tracking-widest
-                      bg-success-light
-                      text-success
-                    "
-                  >
-                    Subscribed
-                  </span>
-
-                )}
-
-              </td>
-
-
-              {/* Engagement */}
-
-              <td className="px-10 py-7">
-
-                <div className="flex items-center gap-1.5">
-
-                  {[1, 2, 3, 4, 5].map((step) => (
-
-                    <div
-                      key={step}
-                      className={`
-                        w-2 h-2 rounded-full
-                        ${
-                          step <= 4
-                            ? 'bg-primary'
-                            : 'bg-border'
-                        }
-                      `}
-                    />
-
-                  ))}
-
-                </div>
-
-              </td>
-
-
-              {/* Actions */}
-
-              <td className="px-10 py-7 text-right">
-
-                <div className="flex justify-end gap-2">
-
-                  {/* Toggle Subscription */}
-
-                  <button
-                    onClick={() =>
-                      handleToggleOptOut(
-                        contact.id,
-                        contact.opt_out
-                      )
-                    }
-                    title={
-                      contact.opt_out
-                        ? 'Re-subscribe'
-                        : 'Disable Automated Messages'
-                    }
-                    className={`
-                      w-9 h-9
-                      flex items-center justify-center
-                      rounded-lg
-                      border
-                      transition-colors
-                      ${
-                        contact.opt_out
-                          ? `
-                            border-success
-                            text-success
-                            hover:bg-success
-                            hover:text-white
-                          `
-                          : `
-                            border-warning
-                            text-warning
-                            hover:bg-warning
-                            hover:text-white
-                          `
-                      }
-                    `}
-                  >
-                    {contact.opt_out ? (
-                      <Bell className="w-4 h-4" />
-                    ) : (
-                      <BellOff className="w-4 h-4" />
-                    )}
-                  </button>
-
-
-                  {/* Send Message */}
-
-                  <button
-                    onClick={() => {
-                      setTargetContact(contact);
-                      setIsMsgModalOpen(true);
-                    }}
-                    title="Send Message"
-                    className="
-                      w-9 h-9
-                      flex items-center justify-center
-                      rounded-lg
-                      border border-primary
-                      text-primary
-                      hover:bg-primary
-                      hover:text-white
-                      transition-colors
-                    "
-                  >
-                    <Send className="w-4 h-4" />
-                  </button>
-
-
-                  {/* Delete */}
-
-                  <button
-                    onClick={() =>
-                      handleDeleteContact(contact.id)
-                    }
-                    title="Delete Contact"
-                    className="
-                      w-9 h-9
-                      flex items-center justify-center
-                      rounded-lg
-                      border border-red-500
-                      text-red-500
-                      hover:bg-red-500
-                      hover:text-white
-                      transition-colors
-                    "
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-
-                </div>
-
-              </td>
-
-            </tr>
-
-          ))}
-
-
-          {/* Loading */}
-
-          {loading && (
-
-            <tr>
-
-              <td
-                colSpan="5"
-                className="px-10 py-20 text-center"
-              >
-
-                <div className="flex justify-center">
-
-                  <div
-                    className="
-                      w-6 h-6
-                      border-2
-                      border-primary
-                      border-t-transparent
-                      rounded-full
-                      animate-spin
-                    "
-                  />
-
-                </div>
-
-              </td>
-
-            </tr>
-
-          )}
-
-
-          {/* Empty State */}
-
-          {!loading &&
-            filteredContacts.length === 0 && (
-
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
+
+      <Reveal>
+        <div className="hairline-grid mb-6 grid grid-cols-1 overflow-hidden rounded-xl sm:grid-cols-3">
+          <StatCard label="Total contacts" value={summary.total} hint="People who have messaged the bot" />
+          <StatCard
+            label="Receiving broadcasts"
+            value={summary.subscribed}
+            hint="Will get your next announcement"
+          />
+          <StatCard
+            label="Opted out"
+            value={summary.optedOut}
+            hint="Skipped automatically on every broadcast"
+          />
+        </div>
+      </Reveal>
+
+      <Reveal delay={0.04}>
+        <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <Tabs
+            value={filter}
+            onValueChange={setFilter}
+            layoutId="contacts-filter"
+            items={FILTERS.map((f) => ({
+              value: f.value,
+              label: f.label,
+              count:
+                f.value === 'all'
+                  ? summary.total
+                  : f.value === 'subscribed'
+                    ? summary.subscribed
+                    : summary.optedOut,
+            }))}
+          />
+
+          <div className="relative w-full lg:max-w-xs">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-titanium-700"
+            />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name, company or number"
+              aria-label="Search contacts"
+              className="pl-9"
+            />
+          </div>
+        </div>
+
+        <p className="mb-6 text-[13px] leading-relaxed text-text-secondary">
+          {activeFilter.help}
+        </p>
+      </Reveal>
+
+      <Reveal delay={0.08}>
+        <Card>
+          <Table className="min-w-[880px]">
+            <TableHeader>
               <tr>
-
-                <td
-                  colSpan="5"
-                  className="px-10 py-24 text-center"
-                >
-
-                  <div className="flex flex-col items-center">
-
-                    <div
-                      className="
-                        w-14 h-14
-                        bg-primary-light
-                        text-primary
-                        rounded-lg
-                        flex
-                        items-center
-                        justify-center
-                        mb-5
-                      "
-                    >
-                      <Users className="w-6 h-6" />
-                    </div>
-
-
-                    <p
-                      className="
-                        text-sm
-                        font-medium
-                        text-text-primary
-                      "
-                    >
-                      No contacts found
-                    </p>
-
-
-                    <p
-                      className="
-                        text-xs
-                        text-text-secondary
-                        mt-2
-                      "
-                    >
-                      Try changing your search or add a new contact.
-                    </p>
-
-                  </div>
-
-                </td>
-
+                <TableHead>Name &amp; number</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>First contact</TableHead>
+                <TableHead>Broadcasts</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </tr>
+            </TableHeader>
 
-            )}
+            <TableBody>
+              {visible.map((contact) => (
+                <TableRow key={contact.id}>
+                  <TableCell>
+                    <p className="font-medium text-ink">
+                      {contact.name ? formatSlug(contact.name) : 'Name not given'}
+                    </p>
+                    <p className="mt-1 font-mono text-[11px] text-titanium-700">+{contact.phone}</p>
+                  </TableCell>
 
-        </tbody>
+                  <TableCell className="text-text-secondary">
+                    {contact.company ? formatSlug(contact.company) : 'Not given'}
+                  </TableCell>
 
-      </table>
+                  <TableCell className="text-text-secondary">
+                    {contact.joined_at ? (
+                      <span title={format(parseISO(contact.joined_at), "d MMMM yyyy 'at' h:mm a")}>
+                        {formatDistanceToNow(parseISO(contact.joined_at), { addSuffix: true })}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </TableCell>
 
-    </div>
+                  <TableCell>
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        checked={!contact.opt_out}
+                        disabled={pendingOptOut === contact.id}
+                        onCheckedChange={() => handleOptOut(contact)}
+                        aria-label={`${contact.opt_out ? 'Include' : 'Exclude'} ${contact.name || contact.phone} in broadcasts`}
+                      />
+                      <Badge variant={contact.opt_out ? 'muted' : 'success'}>
+                        {contact.opt_out ? 'Opted out' : 'Subscribed'}
+                      </Badge>
+                    </div>
+                  </TableCell>
 
-  </div>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button size="xs" variant="outline" onClick={() => openMessage(contact)}>
+                        <Send />
+                        Message
+                      </Button>
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        aria-label={`Open conversation with ${contact.name || contact.phone}`}
+                        title="Open conversation"
+                        onClick={() => navigate(`/messages?phone=${contact.phone}`)}
+                      >
+                        <MessageSquare />
+                      </Button>
+                      <Button
+                        size="icon-xs"
+                        variant="destructive-outline"
+                        aria-label={`Delete ${contact.name || contact.phone}`}
+                        title="Delete contact"
+                        onClick={() => setConfirmDelete(contact)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
 
+              {visible.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-16 text-center">
+                    <p className="font-heading text-base font-bold uppercase tracking-tight text-ink">
+                      {contacts.length === 0 ? 'No contacts yet' : 'Nothing under this filter'}
+                    </p>
+                    <p className="mx-auto mt-2 max-w-[48ch] text-[13px] leading-relaxed text-text-secondary">
+                      {contacts.length === 0
+                        ? 'Contacts are added automatically the first time someone messages the WhatsApp bot. You can also add one by hand if you already have their number.'
+                        : 'No contact matches this filter and search. Switch to “All contacts” to see everyone.'}
+                    </p>
+                  </td>
+                </tr>
+              )}
+            </TableBody>
+          </Table>
 
-  {/* ================= ADD CONTACT MODAL ================= */}
+          {visible.length > 0 && (
+            <div className="border-t border-border bg-paper px-5 py-3">
+              <p className="text-[13px] text-text-secondary">
+                Showing <span className="font-medium tabular-nums text-ink">{visible.length}</span>{' '}
+                of {summary.total} {summary.total === 1 ? 'contact' : 'contacts'}
+              </p>
+            </div>
+          )}
+        </Card>
+      </Reveal>
 
-  {isAddModalOpen && (
+      {/* ── Dialogs ─────────────────────────────────────────────────────── */}
 
-    <div
-      className="
-        fixed inset-0 z-[100]
-        flex items-center justify-center
-        p-6
-        bg-black/40
-        backdrop-blur-sm
-        animate-in fade-in duration-200
-      "
-    >
-
-      <div
-        className="
-          relative
-          w-full
-          max-w-md
-          bg-white
-          border border-border
-          rounded-xl
-          shadow-2xl
-          animate-in
-          zoom-in-95
-          duration-200
-        "
-      >
-
-        <button
-          onClick={() =>
-            setIsAddModalOpen(false)
-          }
-          className="
-            absolute
-            top-5 right-5
-            w-9 h-9
-            flex items-center justify-center
-            rounded-lg
-            text-text-secondary
-            hover:bg-background
-            hover:text-text-primary
-            transition-colors
-          "
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-
-        <div className="p-8 border-b border-border">
-
-          <div
-            className="
-              w-12 h-12
-              bg-primary-light
-              text-primary
-              rounded-lg
-              flex items-center justify-center
-              mb-5
-            "
-          >
-            <UserPlus className="w-6 h-6" />
-          </div>
-
-
-          <h2 className="text-xl font-semibold text-text-primary">
-            Add New Contact
-          </h2>
-
-
-          <p className="text-sm text-text-secondary mt-2">
-            Add a contact to your communication directory.
-          </p>
-
-        </div>
-
-
-        <form
-          onSubmit={handleAddContact}
-          className="p-8 space-y-5"
-        >
-
-          <div>
-
-            <label
-              className="
-                text-[10px]
-                font-medium
-                uppercase
-                tracking-widest
-                text-text-secondary
-                block
-                mb-2
-              "
-            >
-              Full Name
-            </label>
-
-
-            <input
-              type="text"
-              placeholder="e.g. John Doe"
-              value={newContact.name}
-              onChange={(e) =>
-                setNewContact({
-                  ...newContact,
-                  name: e.target.value,
-                })
-              }
-              className="
-                w-full
-                bg-white
-                border border-border
-                px-4 py-3
-                rounded-lg
-                text-sm
-                text-text-primary
-                outline-none
-                focus:border-primary
-                transition-colors
-              "
-            />
-
-          </div>
-
-
-          <div>
-
-            <label
-              className="
-                text-[10px]
-                font-medium
-                uppercase
-                tracking-widest
-                text-text-secondary
-                block
-                mb-2
-              "
-            >
-              Phone Number
-            </label>
-
-
-            <input
-              type="text"
-              placeholder="e.g. 919876543210"
-              value={newContact.phone}
-              onChange={(e) =>
-                setNewContact({
-                  ...newContact,
-                  phone: e.target.value,
-                })
-              }
-              required
-              className="
-                w-full
-                bg-white
-                border border-border
-                px-4 py-3
-                rounded-lg
-                text-sm
-                text-text-primary
-                outline-none
-                focus:border-primary
-                transition-colors
-              "
-            />
-
-          </div>
-
-
-          <div className="flex justify-end gap-3 pt-3">
-
-            <button
-              type="button"
-              onClick={() =>
-                setIsAddModalOpen(false)
-              }
-              className="
-                px-5 py-3
-                rounded-lg
-                text-[10px]
-                font-medium
-                uppercase
-                tracking-widest
-                text-text-secondary
-                border border-border
-                hover:bg-background
-                transition-colors
-              "
-            >
+      <Dialog open={dialog === 'add'} onClose={() => setDialog(null)} labelledBy="add-contact">
+        <DialogHeader
+          id="add-contact"
+          eyebrow="Customers"
+          title="Add a contact"
+          description="Only needed for someone who has not messaged the bot yet — everyone else is added automatically."
+          onClose={() => setDialog(null)}
+        />
+        <form onSubmit={handleAddContact}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="contact-name">Full name</Label>
+              <Input id="contact-name" name="name" placeholder="Rajesh Menon" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contact-phone">WhatsApp number</Label>
+              <Input
+                id="contact-phone"
+                name="phone"
+                required
+                inputMode="numeric"
+                placeholder="919876543210"
+              />
+              <p className="text-[12px] leading-relaxed text-text-secondary">
+                Country code first, no plus sign or spaces.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contact-company">Company</Label>
+              <Input id="contact-company" name="company" placeholder="Northline Polymers" />
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDialog(null)}>
               Cancel
-            </button>
-
-
-            <button
-              type="submit"
-              className="
-                px-5 py-3
-                rounded-lg
-                text-[10px]
-                font-medium
-                uppercase
-                tracking-widest
-                bg-primary
-                text-white
-                hover:bg-primary-hover
-                transition-colors
-              "
-            >
-              Save Contact
-            </button>
-
-          </div>
-
+            </Button>
+            <Button type="submit">Save contact</Button>
+          </DialogFooter>
         </form>
+      </Dialog>
 
-      </div>
+      <Dialog open={dialog === 'message'} onClose={() => setDialog(null)} labelledBy="send-message">
+        <DialogHeader
+          id="send-message"
+          eyebrow="Direct message"
+          title={`Message ${messageTarget?.name ? formatSlug(messageTarget.name) : messageTarget?.phone || ''}`}
+          description="Goes to this one person on WhatsApp immediately. It does not affect their broadcast setting."
+          onClose={() => setDialog(null)}
+        />
+        <form onSubmit={handleSendMessage}>
+          <DialogBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="message-body">Message</Label>
+              <Textarea
+                id="message-body"
+                rows={5}
+                required
+                maxLength={MESSAGE_LIMIT}
+                value={messageBody}
+                onChange={(event) => setMessageBody(event.target.value)}
+                placeholder="Hello — following up on your enquiry about the VFD retrofit."
+              />
+              <p className="text-right font-mono text-[11px] tabular-nums text-titanium-700">
+                {messageBody.length} / {MESSAGE_LIMIT}
+              </p>
+            </div>
 
-    </div>
-
-  )}
-
-
-  {/* ================= QUICK MESSAGE MODAL ================= */}
-
-  {isMsgModalOpen && (
-
-    <div
-      className="
-        fixed inset-0 z-[100]
-        flex items-center justify-center
-        p-6
-        bg-black/40
-        backdrop-blur-sm
-        animate-in fade-in duration-200
-      "
-    >
-
-      <div
-        className="
-          relative
-          w-full
-          max-w-md
-          bg-white
-          border border-border
-          rounded-xl
-          shadow-2xl
-          animate-in
-          zoom-in-95
-          duration-200
-        "
-      >
-
-        <button
-          onClick={() =>
-            setIsMsgModalOpen(false)
-          }
-          className="
-            absolute
-            top-5 right-5
-            w-9 h-9
-            flex items-center justify-center
-            rounded-lg
-            text-text-secondary
-            hover:bg-background
-            hover:text-text-primary
-            transition-colors
-          "
-        >
-          <X className="w-5 h-5" />
-        </button>
-
-
-        <div className="p-8 border-b border-border">
-
-          <div
-            className="
-              w-12 h-12
-              bg-primary-light
-              text-primary
-              rounded-lg
-              flex items-center justify-center
-              mb-5
-            "
-          >
-            <MessageSquare className="w-6 h-6" />
-          </div>
-
-
-          <h2 className="text-xl font-semibold text-text-primary">
-            Quick Message
-          </h2>
-
-
-          <p className="text-sm text-text-secondary mt-2">
-            Send a message to{' '}
-            {targetContact?.name ||
-              targetContact?.phone}
-          </p>
-
-        </div>
-
-
-        <form
-          onSubmit={handleSendMessage}
-          className="p-8 space-y-5"
-        >
-
-          <div>
-
-            <label
-              className="
-                text-[10px]
-                font-medium
-                uppercase
-                tracking-widest
-                text-text-secondary
-                block
-                mb-2
-              "
-            >
-              Message Content
-            </label>
-
-
-            <textarea
-              rows="5"
-              placeholder="Type your message here..."
-              value={message}
-              onChange={(e) =>
-                setMessage(e.target.value)
-              }
-              required
-              className="
-                w-full
-                bg-white
-                border border-border
-                px-4 py-3
-                rounded-lg
-                text-sm
-                text-text-primary
-                outline-none
-                resize-none
-                focus:border-primary
-                transition-colors
-              "
-            />
-
-          </div>
-
-
-          <div className="flex justify-end gap-3 pt-3">
-
-            <button
-              type="button"
-              onClick={() =>
-                setIsMsgModalOpen(false)
-              }
-              className="
-                px-5 py-3
-                rounded-lg
-                text-[10px]
-                font-medium
-                uppercase
-                tracking-widest
-                text-text-secondary
-                border border-border
-                hover:bg-background
-                transition-colors
-              "
-            >
+            <div className="flex items-start gap-3 rounded-lg border border-border bg-paper px-4 py-3">
+              <AlertCircle aria-hidden="true" className="mt-1 size-4 shrink-0 text-titanium-700" />
+              <p className="text-[13px] leading-relaxed text-text-secondary">
+                WhatsApp only allows a free-form message within 24 hours of this
+                person’s last message to you. Outside that window it will be
+                rejected and an approved template is required.
+              </p>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDialog(null)}>
               Cancel
-            </button>
-
-
-            <button
-              type="submit"
-              className="
-                flex items-center gap-2
-                px-5 py-3
-                rounded-lg
-                text-[10px]
-                font-medium
-                uppercase
-                tracking-widest
-                bg-primary
-                text-white
-                hover:bg-primary-hover
-                transition-colors
-              "
-            >
-              <Send className="w-4 h-4" />
-
-              Send Message
-            </button>
-
-          </div>
-
+            </Button>
+            <Button type="submit" disabled={sending || !messageBody.trim()}>
+              {sending ? 'Sending' : 'Send message'}
+            </Button>
+          </DialogFooter>
         </form>
-
-      </div>
-
-    </div>
-
-  )}
-
-</div>
-
-);
+      </Dialog>
+    </>
+  );
 };
 
 export default Contacts;

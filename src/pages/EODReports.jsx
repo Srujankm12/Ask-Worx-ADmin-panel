@@ -36,7 +36,7 @@ r.employee_name
 .includes(searchTerm.toLowerCase())
 );
 
-return ( <div className="p-10 lg:p-14 max-w-[1800px] mx-auto animate-in h-[calc(100vh-80px)] flex flex-col overflow-hidden">
+return ( <div className="flex flex-col">
 
   {/* ================= HEADER ================= */}
 
