@@ -13,6 +13,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
 import { Tabs } from '../components/ui/tabs';
+import { Select } from '../components/ui/select';
 import {
   Table,
   TableHeader,
@@ -156,26 +157,41 @@ const Leads = () => {
       />
 
       <Reveal>
-        <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <Tabs
-            value={activeFilter}
-            onValueChange={setActiveFilter}
-            items={LEAD_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
-          />
+        <div className="mb-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <Tabs
+              value={activeFilter}
+              onValueChange={setActiveFilter}
+              items={LEAD_FILTERS.map((f) => ({ value: f.value, label: f.label }))}
+            />
 
-          <p className="text-[13px] text-text-secondary">
-            Showing{' '}
-            <span className="font-medium tabular-nums text-ink">{filteredLeads.length}</span>{' '}
-            {filteredLeads.length === 1 ? 'lead' : 'leads'}
-            {total > 0 && <> of {total} in total</>}
+            {/* Counted against what is actually on screen. The filter runs on
+                the page the server returned, so "of 12 in total" beside a
+                filtered figure would be comparing two different things. */}
+            <p className="text-[13px] text-text-secondary">
+              {activeFilter === 'all' ? (
+                <>
+                  Showing{' '}
+                  <span className="font-medium tabular-nums text-ink">{leads.length}</span> of{' '}
+                  <span className="tabular-nums">{total}</span>{' '}
+                  {total === 1 ? 'lead' : 'leads'}
+                </>
+              ) : (
+                <>
+                  <span className="font-medium tabular-nums text-ink">{filteredLeads.length}</span>{' '}
+                  of <span className="tabular-nums">{leads.length}</span> on this page
+                </>
+              )}
+            </p>
+          </div>
+
+          {/* The filter explains itself rather than leaving the operator to work
+              out what separates a consultation from a quotation request. It sits
+              under the tabs it describes, not adrift below the whole row. */}
+          <p className="mt-3 max-w-[70ch] text-[13px] leading-relaxed text-text-secondary">
+            {activeFilterMeta.help}
           </p>
         </div>
-
-        {/* The filter explains itself rather than leaving the operator to work
-            out what separates a consultation from a quotation request. */}
-        <p className="mb-6 text-[13px] leading-relaxed text-text-secondary">
-          {activeFilterMeta.help}
-        </p>
       </Reveal>
 
       {loadError && (
@@ -199,14 +215,19 @@ const Leads = () => {
 
       <Reveal delay={0.06}>
         <Card>
-          <Table className="min-w-[960px]">
+          {/* Every column carries an explicit width. Without them the browser
+              sized each one from its content, so the status pill and the
+              action control landed on a different vertical in every row and
+              the right edge of the table sawtoothed. */}
+          <Table className="min-w-[1080px] table-fixed">
             <TableHeader>
               <tr>
-                <TableHead>Name &amp; phone</TableHead>
-                <TableHead>Company</TableHead>
+                <TableHead className="w-[22%]">Name &amp; phone</TableHead>
+                <TableHead className="w-[16%] text-center">Company</TableHead>
                 <TableHead>What they asked for</TableHead>
-                <TableHead className="w-40 text-center">Status</TableHead>
-                <TableHead className="text-right">Update status</TableHead>
+                <TableHead className="w-36 text-center">Received</TableHead>
+                <TableHead className="w-36 text-center">Status</TableHead>
+                <TableHead className="w-52 text-right">Update status</TableHead>
               </tr>
             </TableHeader>
 
@@ -215,64 +236,95 @@ const Leads = () => {
                 const status = getLeadStatus(lead.status);
                 const name = lead.name ? formatSlug(lead.name) : 'Name not given';
 
+                // The number they asked to be called on, and the one they
+                // wrote in from, are usually the same. Rendering both left
+                // every row showing one number twice — and contact_phone
+                // came through without the plus the other line had, so the
+                // pair did not even match.
+                const wroteInFrom = `+${lead.phone}`;
+                const callOn = lead.contact_phone
+                  ? `+${String(lead.contact_phone).replace(/^\+/, '')}`
+                  : wroteInFrom;
+
                 return (
                   <TableRow key={lead.id || index}>
-                    <TableCell>
+                    {/* align-top throughout: these cells run to two and three
+                        lines, and centring each one against the others left
+                        nothing sharing a baseline. The first line of every
+                        cell now starts on the same vertical. */}
+                    <TableCell className="align-top">
                       <p className="font-medium text-ink">{name}</p>
                       <p className="mt-1 font-mono text-[11px] text-titanium-700">
-                        {lead.contact_phone || `+${lead.phone}`}
+                        {callOn}
                       </p>
-                      {lead.contact_phone && (
+                      {callOn !== wroteInFrom && (
                         <p className="mt-1 text-[11px] text-muted-text">
-                          Wrote in from +{lead.phone}
+                          Wrote in from {wroteInFrom}
                         </p>
                       )}
                     </TableCell>
 
-                    <TableCell className="text-text-secondary">
+                    <TableCell className="align-top text-center text-text-secondary">
                       {lead.company ? formatSlug(lead.company) : 'Not given'}
                     </TableCell>
 
-                    <TableCell>
-                      <p className="max-w-md leading-relaxed">
+                    <TableCell className="align-top">
+                      <p className="max-w-[52ch] leading-relaxed">
                         {lead.requirement || 'No details given'}
                       </p>
-                      {lead.created_at && (
-                        // Relative first, because a leads list is read by
-                        // recency; the exact stamp stays available on hover.
-                        <p
-                          className="mt-2 text-[11px] text-muted-text"
-                          title={format(new Date(lead.created_at), "d MMMM yyyy 'at' h:mm a")}
-                        >
+                    </TableCell>
+
+                    {/* Recency is what a leads list is read by, so it earns a
+                        column of its own rather than trailing the enquiry text
+                        at a different indent on every row. */}
+                    <TableCell className="align-top whitespace-nowrap text-center text-text-secondary">
+                      {lead.created_at ? (
+                        <span title={format(new Date(lead.created_at), "d MMMM yyyy 'at' h:mm a")}>
                           {formatDistanceToNow(new Date(lead.created_at), { addSuffix: true })}
-                        </p>
+                        </span>
+                      ) : (
+                        '—'
                       )}
                     </TableCell>
 
-                    <TableCell className="text-center">
+                    <TableCell className="align-top text-center">
                       <Badge variant={status.badge}>
                         <span aria-hidden="true" className={`size-1.5 rounded-full ${status.dot}`} />
                         {status.label}
                       </Badge>
                     </TableCell>
 
-                    <TableCell className="text-right">
-                      <div className="flex flex-wrap justify-end gap-2">
-                        {nextStatuses(lead.status).map((next) => (
-                          <Button
-                            key={next}
-                            size="xs"
-                            variant={next === 'converted' ? 'success' : 'outline'}
-                            onClick={() => setPendingChange({ id: lead.id, status: next, name })}
+                    {/* One control of one width, on one line. A new lead
+                        offered three buttons here, a called lead two and a won
+                        lead none, so the column wrapped to a second row on
+                        some leads and collapsed on others. The moves are the
+                        same moves — the confirmation still names the one
+                        chosen before anything is written. */}
+                    <TableCell className="align-top text-right">
+                      {nextStatuses(lead.status).length > 0 ? (
+                        <div className="ml-auto w-44">
+                          <Select
+                            aria-label={`Update the status of ${name}`}
+                            value=""
+                            onChange={(event) => {
+                              if (!event.target.value) return;
+                              setPendingChange({ id: lead.id, status: event.target.value, name });
+                            }}
+                            className="h-9 text-[13px]"
                           >
-                            {LEAD_STATUS[next].action}
-                          </Button>
-                        ))}
-
-                        {lead.status === 'converted' && (
-                          <span className="text-[13px] text-success">Closed as won</span>
-                        )}
-                      </div>
+                            <option value="">Move to…</option>
+                            {nextStatuses(lead.status).map((next) => (
+                              <option key={next} value={next}>
+                                {LEAD_STATUS[next].action}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      ) : (
+                        <span className="inline-flex h-9 items-center text-[13px] text-success">
+                          Closed as won
+                        </span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -280,7 +332,7 @@ const Leads = () => {
 
               {filteredLeads.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center">
+                  <td colSpan={6} className="px-5 py-16 text-center">
                     {/* An empty state is the best teaching moment in an admin
                         panel — say what belongs here and how it gets here. */}
                     <p className="font-heading text-base font-bold uppercase tracking-tight text-ink">

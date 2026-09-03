@@ -117,16 +117,16 @@ return ( <div className="flex flex-col">
             <th className="px-10 py-6">
               Employee Name
             </th>
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Date
             </th>
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Check-In
             </th>
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Check-Out
             </th>
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Status
             </th>
             <th className="px-10 py-6 text-right">
@@ -147,7 +147,7 @@ return ( <div className="flex flex-col">
                 </span>
               </td>
               {/* Date */}
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
                 <span className="text-xs font-medium text-text-secondary">
                   {format(
                     new Date(r.date),
@@ -156,7 +156,7 @@ return ( <div className="flex flex-col">
                 </span>
               </td>
               {/* Check-In */}
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
                 {r.check_in ? (
                   <div className="flex flex-col">
                     <span className="text-xs font-semibold text-success uppercase tracking-widest">
@@ -174,7 +174,7 @@ return ( <div className="flex flex-col">
                 )}
               </td>
               {/* Check-Out */}
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
                 {r.check_out ? (
                   <div className="flex flex-col">
                     <span className="text-xs font-semibold text-primary uppercase tracking-widest">
@@ -206,9 +206,9 @@ return ( <div className="flex flex-col">
 
               {/* Status */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-success-light text-success rounded-full border border-success/10 w-fit">
+                <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-success/10 bg-success-light px-3 py-1.5 text-success">
 
                   <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
 

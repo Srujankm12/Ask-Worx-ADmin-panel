@@ -54,7 +54,10 @@ function TableHead({ className, ...props }) {
     <th
       data-slot="table-head"
       className={cn(
-        "whitespace-nowrap px-5 py-3 font-mono text-[10px] font-medium tracking-[0.16em] uppercase text-titanium-700",
+        // Ink, not titanium: a column head is a heading, and it sits on the
+        // same screen as ink card titles and ink page titles. At 10px under
+        // 0.16em tracking the grey read as disabled rather than recessive.
+        "whitespace-nowrap px-5 py-3 font-mono text-[10px] font-medium tracking-[0.16em] uppercase text-ink",
         className,
       )}
       {...props}

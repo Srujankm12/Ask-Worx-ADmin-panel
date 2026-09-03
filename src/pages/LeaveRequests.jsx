@@ -262,15 +262,15 @@ return ( <div className="flex flex-col">
               Requested By
             </th>
 
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Leave Details
             </th>
 
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Justification
             </th>
 
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Status
             </th>
 
@@ -334,7 +334,7 @@ return ( <div className="flex flex-col">
 
               {/* Leave Details */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
                 <div className="flex flex-col">
 
@@ -371,7 +371,7 @@ return ( <div className="flex flex-col">
 
               {/* Justification */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
                 <p className="
                   text-xs
@@ -391,10 +391,11 @@ return ( <div className="flex flex-col">
 
               {/* Status */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
                 <div
                   className={`
+                    mx-auto
                     flex
                     items-center
                     gap-2

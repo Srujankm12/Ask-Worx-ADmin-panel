@@ -10,16 +10,24 @@ import {
 } from 'date-fns';
 import { ArrowRight, AlertCircle } from 'lucide-react';
 
-import { getStats, getLeads, getMessages, getCallbacks, getLeaveRequests } from '../api';
+import { getLeads, getMessages, getCallbacks, getLeaveRequests } from '../api';
 import { formatSlug } from '../utils';
-import { getLeadStatus } from '../lib/leadStatus';
+import { getLeadStatus, LEAD_STATUS } from '../lib/leadStatus';
 
 import PageHeader from '../components/PageHeader';
-import StatCard from '../components/StatCard';
 import ActivityChart from '../components/charts/ActivityChart';
+import PipelineChart from '../components/charts/PipelineChart';
+import HoursChart from '../components/charts/HoursChart';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
-import { Card, CardHeader, CardTitle, CardAction, CardContent } from '../components/ui/card';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardAction,
+  CardContent,
+} from '../components/ui/card';
 import {
   Table,
   TableHeader,
@@ -31,13 +39,19 @@ import {
 } from '../components/ui/table';
 import { Reveal } from '../components/motion/Reveal';
 
-const EMPTY_STATS = {
-  total_contacts: 0,
-  total_leads: 0,
-  pending_callbacks: 0,
-  new_leads: 0,
-  total_messages: 0,
-};
+/**
+ * The pipeline read left to right, in the order a lead actually moves. Fills
+ * are the status tokens from index.css; the set was checked with the palette
+ * validator — the worst adjacent pair separates by ΔE 27.8 in normal vision
+ * and 27.3 under deuteranopia. Champagne sits below 3:1 against the card, so
+ * it takes a hairline and, like every stage, a direct label.
+ */
+const PIPELINE_STAGES = [
+  { key: 'new', fill: 'bg-champagne-600', needsOutline: true },
+  { key: 'called', fill: 'bg-warning' },
+  { key: 'in_progress', fill: 'bg-ink' },
+  { key: 'converted', fill: 'bg-success' },
+];
 
 const REFRESH_MS = 30000;
 const WINDOW_DAYS = 14;
@@ -45,7 +59,6 @@ const WINDOW_DAYS = 14;
 const Dashboard = () => {
   const navigate = useNavigate();
 
-  const [stats, setStats] = useState(EMPTY_STATS);
   const [leads, setLeads] = useState([]);
   const [messages, setMessages] = useState([]);
   const [callbacks, setCallbacks] = useState([]);
@@ -56,15 +69,13 @@ const Dashboard = () => {
   const load = useCallback(async () => {
     setLoadError('');
     try {
-      const [statsRes, leadsRes, msgRes, cbRes, lvRes] = await Promise.all([
-        getStats(),
+      const [leadsRes, msgRes, cbRes, lvRes] = await Promise.all([
         getLeads({ limit: 100, offset: 0 }),
         getMessages({ limit: 1000, offset: 0 }),
         getCallbacks(),
         getLeaveRequests({ limit: 100, offset: 0 }),
       ]);
 
-      setStats(statsRes.data || EMPTY_STATS);
       setLeads(leadsRes.data?.data || leadsRes.data || []);
       setMessages(msgRes.data?.data || msgRes.data || []);
       setCallbacks(Array.isArray(cbRes.data) ? cbRes.data : cbRes.data?.data || []);
@@ -114,6 +125,36 @@ const Dashboard = () => {
 
     return buckets;
   }, [messages]);
+
+  // ── When people message, by hour of day ───────────────────────────────────
+  // Same window as the volume chart, collapsed onto a 24-hour clock. It answers
+  // a different question from the daily bars — not "how much" but "when", which
+  // is what decides who needs to be at a desk.
+  const hours = useMemo(() => {
+    const cutoff = subDays(startOfDay(new Date()), WINDOW_DAYS - 1);
+    const buckets = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
+
+    messages.forEach((m) => {
+      if (!m.sent_at) return;
+      const when = parseISO(m.sent_at);
+      if (when < cutoff) return;
+      buckets[when.getHours()].count += 1;
+    });
+
+    return buckets;
+  }, [messages]);
+
+  // ── Where every lead stands ───────────────────────────────────────────────
+  const pipeline = useMemo(
+    () =>
+      PIPELINE_STAGES.map((stage) => ({
+        ...stage,
+        label: LEAD_STATUS[stage.key].label,
+        description: LEAD_STATUS[stage.key].description,
+        count: leads.filter((l) => (l.status || 'new') === stage.key).length,
+      })),
+    [leads],
+  );
 
   // ── The queue: everything a person has to do something about ──────────────
   const queue = useMemo(
@@ -184,48 +225,9 @@ const Dashboard = () => {
         </div>
       )}
 
-      <Reveal>
-        <div className="hairline-grid mb-6 grid grid-cols-1 overflow-hidden rounded-xl sm:grid-cols-3">
-          <StatCard
-            label="New leads"
-            value={stats.new_leads}
-            tone="attention"
-            hint={
-              stats.new_leads === 1
-                ? '1 lead nobody has contacted'
-                : `${stats.new_leads} leads nobody has contacted`
-            }
-            zeroHint="Every lead has been picked up"
-            actionLabel="Open leads"
-            onClick={() => navigate('/leads')}
-          />
-          <StatCard
-            label="Pending callbacks"
-            value={stats.pending_callbacks}
-            tone="waiting"
-            hint={
-              stats.pending_callbacks === 1
-                ? '1 customer is waiting for a call'
-                : `${stats.pending_callbacks} customers are waiting for a call`
-            }
-            zeroHint="No callbacks outstanding"
-            actionLabel="Open callbacks"
-            onClick={() => navigate('/callbacks')}
-          />
-          <StatCard
-            label="Contacts"
-            value={stats.total_contacts}
-            hint="People who have messaged the bot"
-          />
-        </div>
-      </Reveal>
-
       {/* The chart and the queue read together: what happened, and what to
           do about it. The table goes full width below — it is the one thing
           on this page that gains from the extra columns. */}
-      {/* The chart and the queue read together: what happened, and what
-          to do about it. The table goes full width beneath — it is the
-          one thing on this page that gains from the extra columns. */}
       <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
         <div className="xl:col-span-2">
           <Reveal delay={0.06}>
@@ -234,6 +236,11 @@ const Dashboard = () => {
                 <div>
                   <p className="eyebrow">Last {WINDOW_DAYS} days</p>
                   <CardTitle className="mt-2">Conversation volume</CardTitle>
+                  <CardDescription className="mt-2">
+                    Messages the bot received and sent each day. A tall dark
+                    segment is a busy day for customers; a flat line is a day
+                    nobody wrote in.
+                  </CardDescription>
                 </div>
               </CardHeader>
               <CardContent className="pt-6">
@@ -252,6 +259,9 @@ const Dashboard = () => {
               <div>
                 <p className="eyebrow">Your queue</p>
                 <CardTitle className="mt-2">Waiting on somebody</CardTitle>
+                <CardDescription className="mt-2">
+                  Only what is still outstanding. Open one to deal with it.
+                </CardDescription>
               </div>
             </CardHeader>
 
@@ -303,7 +313,50 @@ const Dashboard = () => {
         </div>
       </div>
 
-        <Reveal delay={0.14}>
+      <div className="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-3">
+        <div className="xl:col-span-2">
+          <Reveal delay={0.14}>
+            <Card>
+              <CardHeader>
+                <div>
+                  <p className="eyebrow">All {leads.length} leads</p>
+                  <CardTitle className="mt-2">Lead pipeline</CardTitle>
+                  <CardDescription className="mt-2">
+                    How far along every lead the bot has captured is. A large
+                    first segment means enquiries are arriving faster than
+                    anyone is picking them up.
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <PipelineChart stages={pipeline} />
+              </CardContent>
+            </Card>
+          </Reveal>
+        </div>
+
+        <div>
+          <Reveal delay={0.18}>
+            <Card>
+              <CardHeader>
+                <div>
+                  <p className="eyebrow">Last {WINDOW_DAYS} days</p>
+                  <CardTitle className="mt-2">When people message</CardTitle>
+                  <CardDescription className="mt-2">
+                    Every message placed on a 24-hour clock, so you can see the
+                    hours somebody needs to be available to reply.
+                  </CardDescription>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6">
+                <HoursChart hours={hours} />
+              </CardContent>
+            </Card>
+          </Reveal>
+        </div>
+      </div>
+
+        <Reveal delay={0.22}>
           <Card>
             <CardHeader>
               <div>
@@ -322,7 +375,7 @@ const Dashboard = () => {
               <TableHeader>
                 <tr>
                   <TableHead className="w-[28%]">Lead</TableHead>
-                  <TableHead>Company</TableHead>
+                  <TableHead className="text-center">Company</TableHead>
                   <TableHead className="w-40 text-center">Status</TableHead>
                   <TableHead className="w-44 text-right">Received</TableHead>
                 </tr>
@@ -343,7 +396,7 @@ const Dashboard = () => {
                         </p>
                       </TableCell>
 
-                      <TableCell className="text-text-secondary">
+                      <TableCell className="text-center text-text-secondary">
                         {lead.company ? formatSlug(lead.company) : 'Not given'}
                       </TableCell>
 
