@@ -13,17 +13,19 @@ import { EASE } from '../lib/motion';
 /**
  * The sign-in sheet. Ink ground, drawing grid, the mark centred on it.
  *
- * The form authenticates for real: it posts to /api/login and stores the
- * returned token, which every subsequent API call sends as a Bearer header.
- * It previously navigated straight to the dashboard without contacting the
- * server at all, while the server rejected every unauthenticated request — so
- * the panel signed you in and then showed you nothing.
+ * The form authenticates for real: it posts an email address and a password to
+ * /api/login and stores the session token that comes back, which every
+ * subsequent API call sends as a Bearer header.
  *
- * There is no way past this screen. A build-time bypass lived here while the
- * API was unreachable; the API runs now, so the only route in is a password
- * the server accepts.
+ * Sign-in used to be a single shared password with no account behind it. There
+ * are real accounts now — the server holds a bcrypt hash per address and hands
+ * back a signed token that expires — so the field pair here is what the API
+ * expects, not decoration.
+ *
+ * There is no way past this screen.
  */
 const Login = () => {
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -35,14 +37,18 @@ const Login = () => {
     setSubmitting(true);
 
     try {
-      await login(password);
+      await login(email, password);
       navigate('/', { replace: true });
     } catch (err) {
       // Distinguish "wrong password" from "server unreachable" — they need
       // two completely different things from the person reading this.
+      // Three different things need three different sentences: wrong details,
+      // a malformed request, and a server that never answered.
+      const status = err?.response?.status;
+      const fromServer = err?.response?.data?.error;
       setError(
-        err?.response?.status === 401
-          ? 'That password is not correct. Please try again.'
+        status === 401 || status === 400
+          ? fromServer || 'That email address and password do not match.'
           : 'Could not reach the server. Check your connection, then try again.',
       );
     } finally {
@@ -87,6 +93,26 @@ const Login = () => {
         <div className="mt-10 rounded-2xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
+              <Label htmlFor="email" className="text-champagne-600">
+                Email address
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="username"
+                inputMode="email"
+                autoFocus
+                placeholder="you@askworx.in"
+                required
+                aria-invalid={error ? 'true' : undefined}
+                aria-describedby={error ? 'signin-error' : undefined}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className="border-white/15 bg-white/[0.04] text-champagne-100 placeholder:text-titanium-700 focus-visible:border-champagne focus-visible:ring-champagne/15"
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="password" className="text-champagne-600">
                 Password
               </Label>
@@ -97,7 +123,7 @@ const Login = () => {
                 placeholder="••••••••"
                 required
                 aria-invalid={error ? 'true' : undefined}
-                aria-describedby={error ? 'password-error' : undefined}
+                aria-describedby={error ? 'signin-error' : undefined}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="border-white/15 bg-white/[0.04] text-champagne-100 placeholder:text-titanium-700 focus-visible:border-champagne focus-visible:ring-champagne/15"
@@ -106,7 +132,7 @@ const Login = () => {
 
             {error && (
               <p
-                id="password-error"
+                id="signin-error"
                 role="alert"
                 className="flex items-start gap-2 text-[13px] leading-relaxed text-[#E5766B]"
               >
@@ -118,7 +144,7 @@ const Login = () => {
             <Button
               type="submit"
               size="lg"
-              disabled={submitting || !password}
+              disabled={submitting || !email || !password}
               className="group w-full bg-champagne text-ink hover:bg-champagne-100"
             >
               {submitting ? (

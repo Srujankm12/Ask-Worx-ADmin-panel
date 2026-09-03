@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '../lib/utils';
-import { logout } from '../api';
+import { logout, getSignedInEmail } from '../api';
 
 /**
  * Navigation, ordered the way the established WhatsApp Business platforms
@@ -126,6 +126,10 @@ const NavItem = ({ item, collapsed, setCollapsed }) => (
 const Sidebar = ({ collapsed, setCollapsed }) => {
   const navigate = useNavigate();
 
+  // Read once per mount rather than held in state: it only changes on sign-in
+  // or sign-out, and both of those unmount this component.
+  const email = getSignedInEmail();
+
   const handleLogout = () => {
     logout();
     navigate('/login', { replace: true });
@@ -173,7 +177,44 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
         ))}
       </nav>
 
+      {/* Who is signed in. It sat in the top-right of the header as a fixed
+          "Administrator / ASKworX" that named nobody — the same two words for
+          every account, on a panel that now has real ones. It belongs next to
+          Sign out, because that is the only control it relates to.
+
+          The address itself, not a display name built from it: capitalising
+          the part before the @ turns developersrujan12 into
+          "Developersrujan12" and presents a guess as though it were the
+          person's name. An account here is identified by its email, so that
+          is what this shows. */}
       <div className="relative border-t border-white/10 p-2">
+        {email && (
+          <div
+            className={cn(
+              'flex items-center gap-3 py-2.5',
+              collapsed ? 'justify-center px-0' : 'px-2',
+            )}
+            title={collapsed ? email : undefined}
+          >
+            <span
+              aria-hidden="true"
+              className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-champagne text-[9px] font-bold uppercase leading-none text-ink"
+            >
+              {email.charAt(0)}
+            </span>
+            {!collapsed && (
+              <span className="min-w-0 flex-1">
+                <span className="block font-mono text-[9px] leading-none tracking-[0.18em] uppercase text-titanium-300">
+                  Signed in as
+                </span>
+                <span className="mt-1.5 block truncate text-[13px] font-medium leading-tight text-champagne-100">
+                  {email}
+                </span>
+              </span>
+            )}
+          </div>
+        )}
+
         <button
           type="button"
           onClick={handleLogout}

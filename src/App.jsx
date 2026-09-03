@@ -8,7 +8,7 @@ import {
   useLocation,
 } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
-import { Menu, PanelLeftClose, User } from 'lucide-react';
+import { Menu, PanelLeftClose } from 'lucide-react';
 
 import Sidebar from './components/Sidebar';
 import { TOKEN_KEY } from './api';
@@ -78,20 +78,6 @@ const Layout = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right md:block">
-              <p className="font-mono text-[10px] leading-none tracking-[0.18em] uppercase text-titanium-700">
-                Administrator
-              </p>
-              <p className="mt-1 font-heading text-[13px] font-bold uppercase leading-none tracking-tight text-ink">
-                ASKworX
-              </p>
-            </div>
-
-            <div className="flex size-9 items-center justify-center rounded-lg bg-ink text-champagne-100">
-              <User className="size-4" />
-            </div>
-          </div>
         </header>
 
         <main className="relative flex-1 overflow-y-auto bg-white">
