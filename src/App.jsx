@@ -11,6 +11,7 @@ import { AnimatePresence } from 'framer-motion';
 import { Menu, PanelLeftClose } from 'lucide-react';
 
 import Sidebar from './components/Sidebar';
+import WhatsAppMark from './components/WhatsAppMark';
 import { TOKEN_KEY } from './api';
 import { PageTransition } from './components/motion/PageTransition';
 
@@ -73,8 +74,11 @@ const Layout = () => {
               {collapsed ? <Menu className="size-5" /> : <PanelLeftClose className="size-5" />}
             </button>
 
-            <span className="hidden font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-700 sm:block">
-              WhatsApp Business Console
+            <span className="hidden items-center gap-2.5 sm:flex">
+              <WhatsAppMark className="size-4" />
+              <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-700">
+                WhatsApp Business Console
+              </span>
             </span>
           </div>
 
@@ -124,7 +128,6 @@ const ROUTES = [
   { path: '/work-plans', element: <WorkPlans /> },
   { path: '/eod-reports', element: <EODReports /> },
   { path: '/leave-requests', element: <LeaveRequests /> },
-  { path: '/announcements', element: <Announcements /> },
 ];
 
 /**

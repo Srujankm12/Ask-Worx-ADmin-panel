@@ -15,6 +15,7 @@ import {
 
 import { cn } from '../lib/utils';
 import { logout, getSignedInEmail } from '../api';
+import WhatsAppMark from './WhatsAppMark';
 
 /**
  * Navigation, ordered the way the established WhatsApp Business platforms
@@ -157,8 +158,19 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
           className={cn('object-contain transition-all duration-300', collapsed ? 'size-8' : 'size-9')}
         />
         {!collapsed && (
-          <span className="font-heading text-lg font-extrabold uppercase leading-none tracking-tight text-champagne-100">
-            ASKworX
+          <span className="min-w-0">
+            <span className="block font-heading text-lg font-extrabold uppercase leading-none tracking-tight text-champagne-100">
+              ASKworX
+            </span>
+            {/* Which channel this console operates, said once and quietly.
+                The wordmark keeps its line at full size; this sits under it in
+                the recessive register rather than competing for the title. */}
+            <span className="mt-1.5 flex items-center gap-1.5 whitespace-nowrap">
+              <WhatsAppMark className="size-3" />
+              <span className="text-[11px] leading-none text-titanium-300">
+                WhatsApp Business
+              </span>
+            </span>
           </span>
         )}
       </div>

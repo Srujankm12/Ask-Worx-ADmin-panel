@@ -9,6 +9,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { EASE } from '../lib/motion';
+import WhatsAppMark from '../components/WhatsAppMark';
 
 /**
  * The sign-in sheet. Ink ground, drawing grid, the mark centred on it.
@@ -83,6 +84,7 @@ const Login = () => {
 
           <div className="mt-4 flex items-center gap-3">
             <span aria-hidden="true" className="h-px w-8 bg-white/15" />
+            <WhatsAppMark className="size-4" />
             <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-300">
               WhatsApp Business Console
             </span>
