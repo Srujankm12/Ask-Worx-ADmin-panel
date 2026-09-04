@@ -85,6 +85,23 @@ of figures, where the eye is locating rather than reading, and wrong on a form
 label, where someone is reading in order to act. `<Label>` is the read
 register; `.spec-label` is the scanned one.
 
+### Heading colour
+
+Headings are ink, all the way down: the page `h1`, every `CardTitle`, and every
+table column head. Two of those did not start that way.
+
+`.titanium-sheen` clips the brushed-metal gradient to the page title, and its
+lightest stop is `#8F887C`. On the marketing site, where the h1 is the only
+thing on screen, that reads as finish. In a console, where the same screen also
+carries ink card titles and a table of ink figures, it reads as a heading that
+has been greyed out. `<PageHeader>` therefore renders solid ink by default; the
+gradient is still there behind the `sheen` prop for a page that wants it.
+
+Table column heads were `titanium-700`. They keep the scanned register below —
+mono, 10px, `tracking-[0.16em]`, uppercase — but in ink. At that size, under
+that much tracking, the grey read as disabled rather than recessive. Contrast
+comes from size and weight against the body text, not from lightening it.
+
 ### Density
 
 The site breathes at `py-16 md:py-24 lg:py-32`. A console cannot — an operator
@@ -146,7 +163,8 @@ looks nothing like the app, cannot say what it is about to do, and is clicked
 through on reflex.
 
 **Page headings.** Never hand-roll one. `<PageHeader>` enforces eyebrow →
-title → intro and wires the reveal.
+title → intro and wires the reveal. The title is solid ink; pass `sheen` for
+the titanium gradient.
 
 ---
 

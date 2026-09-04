@@ -9,6 +9,7 @@ import axios from 'axios';
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
 export const TOKEN_KEY = 'askworx_token';
+export const EMAIL_KEY = 'askworx_email';
 
 const api = axios.create({
   baseURL: `${BASE_URL}/api`,
@@ -16,9 +17,9 @@ const api = axios.create({
 
 /**
  * Every /api route behind AuthMiddleware requires `Authorization: Bearer
- * <API_SECRET>`; without this header the server answers 401 and the panel
+ * <session token>`; without this header the server answers 401 and the panel
  * renders empty tables with no explanation. The token is issued by
- * POST /api/login and held in localStorage.
+ * POST /api/login, is signed and time-limited, and is held in localStorage.
  */
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem(TOKEN_KEY);
@@ -40,20 +41,35 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401 && !window.location.pathname.startsWith('/login')) {
       localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(EMAIL_KEY);
       window.location.assign('/login');
     }
     return Promise.reject(error);
   },
 );
 
-export const login = async (password) => {
-  const { data } = await api.post('/login', { password });
+/**
+ * Sign in with an email address and a password.
+ *
+ * The server returns a signed session token that expires, not the shared API
+ * secret it used to hand back — so a token is now per-account and does not
+ * live for ever. The address is kept alongside it only so the shell can show
+ * who is signed in.
+ */
+export const login = async (email, password) => {
+  const { data } = await api.post('/login', { email, password });
   if (!data?.token) throw new Error('The server did not return a session token.');
   localStorage.setItem(TOKEN_KEY, data.token);
+  if (data.email) localStorage.setItem(EMAIL_KEY, data.email);
   return data.token;
 };
 
-export const logout = () => localStorage.removeItem(TOKEN_KEY);
+export const getSignedInEmail = () => localStorage.getItem(EMAIL_KEY) || '';
+
+export const logout = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(EMAIL_KEY);
+};
 
 export const getStats = () => api.get('/stats');
 export const getLeads = (params) => api.get('/leads', { params });
@@ -65,7 +81,13 @@ export const saveContact = (data) => api.post('/contacts', data);
 export const deleteContact = (id) => api.delete(`/contacts/${id}`);
 export const toggleOptOut = (id, optOut) => api.post(`/contacts/${id}/opt-out`, { opt_out: optOut });
 export const getMessages = (params) => api.get('/messages', { params });
-export const getChatHistory = (phone) => api.get(`/messages/${phone}`);
+
+/** Per-day and per-hour counts for the dashboard, aggregated server-side. */
+export const getMessageSummary = (days = 14) =>
+  api.get('/messages/summary', { params: { days } });
+/** Pass afterId to fetch only what is newer than the last message you hold. */
+export const getChatHistory = (phone, afterId = 0) =>
+  api.get(`/messages/${phone}`, { params: afterId ? { after_id: afterId } : undefined });
 export const sendMessage = (phone, message) => api.post('/send-message', { phone, message });
 
 // Campaign Management

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getLeaveRequests, updateLeaveStatus } from '../api';
 import { CalendarRange, Check, X, Clock } from 'lucide-react';
 import Modal from '../components/Modal';
@@ -15,9 +15,8 @@ message: '',
 type: 'success'
 });
 
-useEffect(() => {
-fetchRequests();
-}, []);
+
+
 
 const [total, setTotal] = useState(0);
 const [page, setPage] = useState(0);
@@ -26,11 +25,10 @@ start_date: '',
 end_date: ''
 });
 
-useEffect(() => {
-fetchRequests();
-}, [page, filters]);
-
-const fetchRequests = async () => {
+// Declared after the state it reads: a useCallback is a const, so naming
+// it in a dependency array evaluated earlier in the render — or reading
+// page and filters before their useState runs — throws on first paint.
+const fetchRequests = useCallback(async () => {
 try {
 const resp = await getLeaveRequests({
 limit: 10,
@@ -46,7 +44,16 @@ offset: page * 10,
   setLoading(false);
 }
 
-};
+}, [page, filters]);
+
+useEffect(() => {
+fetchRequests();
+}, [fetchRequests]);
+
+useEffect(() => {
+fetchRequests();
+}, [fetchRequests]);
+
 
 const handleAction = async (id, status) => {
 try {
@@ -262,15 +269,15 @@ return ( <div className="flex flex-col">
               Requested By
             </th>
 
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Leave Details
             </th>
 
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Justification
             </th>
 
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Status
             </th>
 
@@ -334,7 +341,7 @@ return ( <div className="flex flex-col">
 
               {/* Leave Details */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
                 <div className="flex flex-col">
 
@@ -371,7 +378,7 @@ return ( <div className="flex flex-col">
 
               {/* Justification */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
                 <p className="
                   text-xs
@@ -391,10 +398,11 @@ return ( <div className="flex flex-col">
 
               {/* Status */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
                 <div
                   className={`
+                    mx-auto
                     flex
                     items-center
                     gap-2

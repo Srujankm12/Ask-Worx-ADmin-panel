@@ -14,9 +14,12 @@ import { Reveal, RevealText } from "./motion/Reveal";
  *                    positioned aria-hidden layer behind the hero, bleeding
  *                    to the edges of the working area and fading out before
  *                    it reaches the content below.
- *   .titanium-sheen  the brushed-metal gradient clipped to the h1. Reserved
- *                    for the single most important line on a page — in a tool
- *                    that is the page title, and there is exactly one.
+ *   .titanium-sheen  the brushed-metal gradient clipped to the h1. Available
+ *                    behind `sheen`, but OFF by default: its lightest stop is
+ *                    #8F887C, which reads as washed-out grey next to the solid
+ *                    ink of every card title and table head on the same
+ *                    screen. A console wants its headings dark. Pass
+ *                    `sheen` to bring the gradient back on one page.
  *
  * The h1 is `.display-1`, per §3: that class is the page h1, one per page.
  * `.display-2` is a section h2 and belongs on the cards below.
@@ -25,7 +28,7 @@ import { Reveal, RevealText } from "./motion/Reveal";
  * through here, so the rhythm is the same on all fifteen and a new page
  * cannot quietly invent its own.
  */
-export function PageHeader({ eyebrow, title, intro, action, className, children, sheen = true }) {
+export function PageHeader({ eyebrow, title, intro, action, className, children, sheen = false }) {
   return (
     <div className={cn("relative mb-10", className)}>
       {/* The drawing sheet. Decorative, so hidden from assistive tech. It is

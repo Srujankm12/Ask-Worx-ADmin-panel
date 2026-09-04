@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getEmployees, addEmployee, deleteEmployee } from '../api';
 import { UserPlus, Trash2, ShieldCheck, Mail } from 'lucide-react';
 import Modal from '../components/Modal';
@@ -15,11 +15,7 @@ const [confirm, setConfirm] = useState({ open: false, id: null });
 const [total, setTotal] = useState(0);
 const [page, setPage] = useState(0);
 
-useEffect(() => {
-fetchEmployees();
-}, [page]);
-
-const fetchEmployees = async () => {
+const fetchEmployees = useCallback(async () => {
 try {
 const resp = await getEmployees({
 limit: 10,
@@ -35,7 +31,12 @@ offset: page * 10
   setLoading(false);
 }
 
-};
+}, [page]);
+
+useEffect(() => {
+fetchEmployees();
+}, [fetchEmployees]);
+
 
 const handleSubmit = async (e) => {
 e.preventDefault();
@@ -184,11 +185,11 @@ return ( <div className="flex flex-col">
               Member Identity
             </th>
 
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Verification
             </th>
 
-            <th className="px-10 py-6">
+            <th className="px-10 py-6 text-center">
               Role
             </th>
 
@@ -247,7 +248,7 @@ return ( <div className="flex flex-col">
 
               {/* Verification */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
                 <span className="text-xs font-medium text-text-secondary tracking-widest">
 
@@ -260,9 +261,9 @@ return ( <div className="flex flex-col">
 
               {/* Role */}
 
-              <td className="px-10 py-8">
+              <td className="px-10 py-8 text-center">
 
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-background text-text-secondary rounded-full border border-border w-fit">
+                <div className="mx-auto flex w-fit items-center gap-2 rounded-full border border-border bg-background px-3 py-1.5 text-text-secondary">
 
                   <ShieldCheck className="w-3 h-3 text-primary" />
 

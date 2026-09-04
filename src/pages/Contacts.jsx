@@ -336,9 +336,9 @@ const Contacts = () => {
             <TableHeader>
               <tr>
                 <TableHead>Name &amp; number</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>First contact</TableHead>
-                <TableHead>Broadcasts</TableHead>
+                <TableHead className="text-center">Company</TableHead>
+                <TableHead className="text-center">First contact</TableHead>
+                <TableHead className="text-center">Broadcasts</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </tr>
             </TableHeader>
@@ -353,11 +353,11 @@ const Contacts = () => {
                     <p className="mt-1 font-mono text-[11px] text-titanium-700">+{contact.phone}</p>
                   </TableCell>
 
-                  <TableCell className="text-text-secondary">
+                  <TableCell className="text-center text-text-secondary">
                     {contact.company ? formatSlug(contact.company) : 'Not given'}
                   </TableCell>
 
-                  <TableCell className="text-text-secondary">
+                  <TableCell className="text-center text-text-secondary">
                     {contact.joined_at ? (
                       <span title={format(parseISO(contact.joined_at), "d MMMM yyyy 'at' h:mm a")}>
                         {formatDistanceToNow(parseISO(contact.joined_at), { addSuffix: true })}
@@ -368,7 +368,7 @@ const Contacts = () => {
                   </TableCell>
 
                   <TableCell>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center gap-3">
                       <Switch
                         checked={!contact.opt_out}
                         disabled={pendingOptOut === contact.id}
