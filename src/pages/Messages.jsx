@@ -1,10 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from '../components/Modal';
 import { getContacts, getChatHistory, sendMessage, saveContact } from '../api';
 import { useSearchParams } from 'react-router-dom';
 import { Send, Search, MessageSquare, ArrowLeft, Edit2, Check, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatSlug } from '../utils';
+
+// Inbound messages already arrive by webhook and are written straight to the
+// log, so the poll only decides how quickly the open tab notices. Three
+// seconds was a full conversation refetch twenty times a minute; five seconds
+// of an incremental fetch is a fraction of the load and reads the same.
+const HISTORY_POLL_MS = 5000;
+const CONTACTS_POLL_MS = 15000;
 
 const Messages = () => {
 const [searchParams] = useSearchParams();
@@ -19,12 +26,59 @@ const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
 const [isEditingName, setIsEditingName] = useState(false);
 const [editedName, setEditedName] = useState('');
 const scrollRef = useRef(null);
+// The id of the newest message held, and the conversation it belongs to.
+// Refs rather than state: the poll reads them without needing to be
+// recreated, so the interval is not torn down on every new message.
+const lastIdRef = useRef(0);
+const phoneRef = useRef(null);
+
+const fetchContacts = useCallback(async () => {
+try {
+const resp = await getContacts();
+setContacts(resp.data || []);
+} catch (err) {
+console.error(err);
+}
+}, []);
+// A background poll asks only for what is newer than the last message on
+// screen and appends it. It used to refetch the entire conversation every
+// three seconds, which was a full scan of messages_log per poll per open tab,
+// and replaced the whole array each time — so React re-rendered every bubble
+// even when nothing had changed.
+const fetchHistory = useCallback(async (phone, background = false) => {
+  if (!background) setLoadingHistory(true);
+
+  try {
+    const afterId = background ? lastIdRef.current : 0;
+    const resp = await getChatHistory(phone, afterId);
+    const incoming = resp.data || [];
+
+    if (!background) {
+      setMessages(incoming);
+    } else if (incoming.length > 0) {
+      // Guard against a late reply from a conversation you have since left.
+      if (phoneRef.current !== phone) return;
+      setMessages((current) => {
+        const seen = new Set(current.map((m) => m.id));
+        const added = incoming.filter((m) => !seen.has(m.id));
+        return added.length > 0 ? [...current, ...added] : current;
+      });
+    }
+
+    const newest = incoming[incoming.length - 1];
+    if (newest?.id) lastIdRef.current = Math.max(lastIdRef.current, newest.id);
+  } catch (err) {
+    console.error(err);
+  } finally {
+    if (!background) setLoadingHistory(false);
+  }
+}, []);
 
 useEffect(() => {
 fetchContacts();
-const interval = setInterval(fetchContacts, 10000);
+const interval = setInterval(fetchContacts, CONTACTS_POLL_MS);
 return () => clearInterval(interval);
-}, []);
+}, [fetchContacts]);
 
 useEffect(() => {
 if (contacts.length > 0 && !selectedContact) {
@@ -37,28 +91,32 @@ const phone = searchParams.get('phone');
   }
 }
 
-}, [contacts]);
+}, [contacts, searchParams, selectedContact]);
 
 useEffect(() => {
 if (selectedContact) {
 setUserHasScrolledUp(false);
+lastIdRef.current = 0;
+phoneRef.current = selectedContact.phone;
 fetchHistory(selectedContact.phone);
 
   const interval = setInterval(
     () => fetchHistory(selectedContact.phone, true),
-    3000
+    HISTORY_POLL_MS
   );
 
   return () => clearInterval(interval);
 }
 
-}, [selectedContact]);
+phoneRef.current = null;
+return undefined;
+}, [selectedContact, fetchHistory]);
 
 useEffect(() => {
 if (messages.length > 0 && !userHasScrolledUp) {
 scrollToBottom();
 }
-}, [messages]);
+}, [messages, userHasScrolledUp]);
 
 const scrollToBottom = () => {
 if (scrollRef.current) {
@@ -85,33 +143,7 @@ if (!isAtBottom) {
 
 };
 
-const fetchContacts = async () => {
-try {
-const resp = await getContacts();
-setContacts(resp.data || []);
-} catch (err) {
-console.error(err);
-}
-};
 
-const fetchHistory = async (
-phone,
-background = false
-) => {
-if (!background) setLoadingHistory(true);
-
-try {
-  const resp = await getChatHistory(phone);
-  setMessages(resp.data || []);
-} catch (err) {
-  console.error(err);
-} finally {
-  if (!background) {
-    setLoadingHistory(false);
-  }
-}
-
-};
 
 const handleSend = async (e) => {
 if (e) e.preventDefault();

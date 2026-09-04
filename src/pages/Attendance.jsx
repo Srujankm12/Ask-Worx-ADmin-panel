@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getAttendance } from '../api';
 import { format } from 'date-fns';
 import { ClipboardCheck, Search } from 'lucide-react';
@@ -14,11 +14,7 @@ start_date: '',
 end_date: ''
 });
 
-useEffect(() => {
-fetchAttendance();
-}, [page, filters]);
-
-const fetchAttendance = async () => {
+const fetchAttendance = useCallback(async () => {
 try {
 const resp = await getAttendance({
 limit: 10,
@@ -33,7 +29,12 @@ offset: page * 10,
 } finally {
   setLoading(false);
 }
-};
+}, [page, filters]);
+
+useEffect(() => {
+fetchAttendance();
+}, [fetchAttendance]);
+
 
 return ( <div className="flex flex-col">
 

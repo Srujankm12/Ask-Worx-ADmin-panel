@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getEmployees, createReminder, getRemindersHistory } from '../api';
 import {
 Clock,
@@ -34,15 +34,7 @@ const [history, setHistory] = useState([]);
 const [historyTotal, setHistoryTotal] = useState(0);
 const [historyPage, setHistoryPage] = useState(0);
 
-useEffect(() => {
-fetchEmployees();
-}, []);
-
-useEffect(() => {
-fetchHistory();
-}, [historyPage]);
-
-const fetchEmployees = async () => {
+const fetchEmployees = useCallback(async () => {
 try {
 const resp = await getEmployees({
 limit: 100
@@ -53,9 +45,8 @@ limit: 100
 } catch (err) {
   console.error(err);
 }
-};
-
-const fetchHistory = async () => {
+}, []);
+const fetchHistory = useCallback(async () => {
 try {
 const resp = await getRemindersHistory({
 limit: 5,
@@ -68,7 +59,17 @@ offset: historyPage * 5
   console.error(err);
 }
 
-};
+}, [historyPage]);
+
+useEffect(() => {
+fetchEmployees();
+}, [fetchEmployees]);
+
+useEffect(() => {
+fetchHistory();
+}, [fetchHistory]);
+
+
 
 const handleSubmit = async (e) => {
 e.preventDefault();

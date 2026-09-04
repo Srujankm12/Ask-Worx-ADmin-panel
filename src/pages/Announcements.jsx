@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getEmployees, sendAnnouncement, getRemindersHistory } from '../api';
 import { Megaphone, Send, Users, ShieldAlert, History } from 'lucide-react';
 import Modal from '../components/Modal';
@@ -23,24 +23,15 @@ const [history, setHistory] = useState([]);
 const [total, setTotal] = useState(0);
 const [page, setPage] = useState(0);
 
-useEffect(() => {
-fetchEmployees();
-}, []);
-
-useEffect(() => {
-fetchHistory();
-}, [page]);
-
-const fetchEmployees = async () => {
+const fetchEmployees = useCallback(async () => {
 try {
 const resp = await getEmployees({ limit: 100 });
 setEmployees(resp.data.data || []);
 } catch (err) {
 console.error(err);
 }
-};
-
-const fetchHistory = async () => {
+}, []);
+const fetchHistory = useCallback(async () => {
 try {
 const resp = await getRemindersHistory({
 limit: 5,
@@ -52,7 +43,17 @@ offset: page * 5
 } catch (err) {
   console.error(err);
 }
-};
+}, [page]);
+
+useEffect(() => {
+fetchEmployees();
+}, [fetchEmployees]);
+
+useEffect(() => {
+fetchHistory();
+}, [fetchHistory]);
+
+
 
 const toggleSelect = (phone) => {
 if (selectedPhones.includes(phone)) {

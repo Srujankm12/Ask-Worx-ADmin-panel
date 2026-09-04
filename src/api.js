@@ -81,7 +81,13 @@ export const saveContact = (data) => api.post('/contacts', data);
 export const deleteContact = (id) => api.delete(`/contacts/${id}`);
 export const toggleOptOut = (id, optOut) => api.post(`/contacts/${id}/opt-out`, { opt_out: optOut });
 export const getMessages = (params) => api.get('/messages', { params });
-export const getChatHistory = (phone) => api.get(`/messages/${phone}`);
+
+/** Per-day and per-hour counts for the dashboard, aggregated server-side. */
+export const getMessageSummary = (days = 14) =>
+  api.get('/messages/summary', { params: { days } });
+/** Pass afterId to fetch only what is newer than the last message you hold. */
+export const getChatHistory = (phone, afterId = 0) =>
+  api.get(`/messages/${phone}`, { params: afterId ? { after_id: afterId } : undefined });
 export const sendMessage = (phone, message) => api.post('/send-message', { phone, message });
 
 // Campaign Management
