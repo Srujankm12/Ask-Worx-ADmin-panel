@@ -53,7 +53,7 @@ export const BROADCAST_TYPES = {
   },
   poster: {
     label: 'Poster',
-    summary: 'An image with an optional caption. Nothing is collected back.',
+    summary: 'An image with a caption and up to three buttons people can tap.',
   },
 };
 
