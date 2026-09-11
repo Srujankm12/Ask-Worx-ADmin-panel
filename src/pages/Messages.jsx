@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Modal from '../components/Modal';
 import { getContacts, getChatHistory, sendMessage, saveContact } from '../api';
 import { useSearchParams } from 'react-router-dom';
 import { Send, Search, MessageSquare, ArrowLeft, Edit2, Check, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { formatSlug } from '../utils';
+import { describeWindow, isInWindow, latest } from '../lib/replyWindow';
 
 // Inbound messages already arrive by webhook and are written straight to the
 // log, so the poll only decides how quickly the open tab notices. Three
@@ -12,6 +13,9 @@ import { formatSlug } from '../utils';
 // of an incremental fetch is a fraction of the load and reads the same.
 const HISTORY_POLL_MS = 5000;
 const CONTACTS_POLL_MS = 15000;
+// Re-reads the reply window so "free to reply for 5m" counts down and the
+// send box locks when it runs out, without waiting for a poll.
+const WINDOW_TICK_MS = 30000;
 
 const Messages = () => {
 const [searchParams] = useSearchParams();
@@ -25,6 +29,7 @@ const [loadingHistory, setLoadingHistory] = useState(false);
 const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
 const [isEditingName, setIsEditingName] = useState(false);
 const [editedName, setEditedName] = useState('');
+const [now, setNow] = useState(() => Date.now());
 const scrollRef = useRef(null);
 // The id of the newest message held, and the conversation it belongs to.
 // Refs rather than state: the poll reads them without needing to be
@@ -79,6 +84,23 @@ fetchContacts();
 const interval = setInterval(fetchContacts, CONTACTS_POLL_MS);
 return () => clearInterval(interval);
 }, [fetchContacts]);
+
+useEffect(() => {
+const interval = setInterval(() => setNow(Date.now()), WINDOW_TICK_MS);
+return () => clearInterval(interval);
+}, []);
+
+// The open conversation's reply window. selectedContact is the snapshot taken
+// when it was clicked, so the fresh copy from the contacts poll is preferred,
+// and a message that has just arrived in this chat counts at once rather than
+// on the next poll.
+const replyWindow = useMemo(() => {
+if (!selectedContact) return null;
+const live = contacts.find((c) => c.id === selectedContact.id) || selectedContact;
+const lastInChat = [...messages].reverse().find((m) => m.direction === 'incoming');
+return describeWindow(latest(live.last_incoming_at, lastInChat?.sent_at), now);
+}, [selectedContact, contacts, messages, now]);
+const canReply = !!replyWindow?.open;
 
 useEffect(() => {
 if (contacts.length > 0 && !selectedContact) {
@@ -148,7 +170,7 @@ if (!isAtBottom) {
 const handleSend = async (e) => {
 if (e) e.preventDefault();
 
-if (!newMessage.trim() || !selectedContact) return;
+if (!newMessage.trim() || !selectedContact || !canReply) return;
 
 try {
   await sendMessage(
@@ -176,8 +198,10 @@ try {
   setModal({
     open: true,
     title: 'Message not sent',
+    // The server says why — most often that the 24-hour window has closed.
     message:
-      'WhatsApp only allows a free-form reply within 24 hours of the customer\u2019s last message. After that an approved template is required.',
+      err.response?.data?.error ||
+      'The message could not be sent. Check your connection and try again.',
     type: 'error',
   });
 }
@@ -328,6 +352,7 @@ return ( <div className="flex h-[calc(100vh-9rem)] overflow-hidden rounded-xl bo
 
           <div
             className={`
+              relative
               w-10
               h-10
               rounded-lg
@@ -346,6 +371,13 @@ return ( <div className="flex h-[calc(100vh-9rem)] overflow-hidden rounded-xl bo
           >
 
             {(contact.name || 'A')[0].toUpperCase()}
+
+            <span
+              aria-hidden="true"
+              className={`absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2 ring-white ${
+                isInWindow(contact.last_incoming_at, now) ? 'bg-success' : 'bg-titanium-300'
+              }`}
+            />
 
           </div>
 
@@ -378,6 +410,12 @@ return ( <div className="flex h-[calc(100vh-9rem)] overflow-hidden rounded-xl bo
             <p className="text-[10px] truncate font-medium text-text-secondary mt-1">
 
               {contact.phone}
+
+              <span className="sr-only">
+                {isInWindow(contact.last_incoming_at, now)
+                  ? ' — can reply free'
+                  : ' — needs to message first'}
+              </span>
 
             </p>
 
@@ -565,11 +603,16 @@ return ( <div className="flex h-[calc(100vh-9rem)] overflow-hidden rounded-xl bo
 
               <div className="flex items-center gap-1.5">
 
-                <div className="w-1.5 h-1.5 rounded-full bg-success" />
+                <div
+                  aria-hidden="true"
+                  className={`w-1.5 h-1.5 rounded-full ${canReply ? 'bg-success' : 'bg-titanium-300'}`}
+                />
 
-                <span className="text-[9px] font-medium uppercase tracking-widest text-text-secondary">
+                <span
+                  className={`text-[11px] font-medium ${canReply ? 'text-success' : 'text-text-secondary'}`}
+                >
 
-                  Online
+                  {replyWindow?.label}
 
                 </span>
 
@@ -787,7 +830,13 @@ return ( <div className="flex h-[calc(100vh-9rem)] overflow-hidden rounded-xl bo
 
             <input
               type="text"
-              placeholder="Type a message..."
+              disabled={!canReply}
+              aria-label="Reply"
+              placeholder={
+                canReply
+                  ? 'Type a message...'
+                  : 'They need to message first'
+              }
               className="
                 flex-1
                 bg-transparent
@@ -799,6 +848,7 @@ return ( <div className="flex h-[calc(100vh-9rem)] overflow-hidden rounded-xl bo
                 font-medium
                 text-text-primary
                 placeholder:text-text-secondary
+                disabled:cursor-not-allowed
               "
               value={newMessage}
               onChange={(e) =>
@@ -813,7 +863,8 @@ return ( <div className="flex h-[calc(100vh-9rem)] overflow-hidden rounded-xl bo
 
             <button
               onClick={handleSend}
-              disabled={!newMessage.trim()}
+              disabled={!newMessage.trim() || !canReply}
+              aria-label="Send"
               className="
                 w-11
                 h-11

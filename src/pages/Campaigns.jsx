@@ -9,6 +9,7 @@ import {
   MessageCircleQuestion,
   Plus,
   Trash2,
+  X,
 } from 'lucide-react';
 
 import {
@@ -21,6 +22,7 @@ import {
 } from '../api';
 import { formatSlug } from '../utils';
 import { getBroadcastStatus, getBroadcastType } from '../lib/broadcastStatus';
+import { isInWindow } from '../lib/replyWindow';
 
 import PageHeader from '../components/PageHeader';
 import Modal from '../components/Modal';
@@ -60,7 +62,33 @@ const EMPTY_QUIZ = {
   scheduled_at: '',
 };
 
-const EMPTY_POSTER = { type: 'poster', image_url: '', caption: '', scheduled_at: '' };
+// What a poster button can do when it is tapped. Mirrors posterButtonActions
+// in the bot's scheduler.go, which rejects anything not listed there.
+const BUTTON_ACTIONS = [
+  { value: 'main_menu', label: 'Open the main menu' },
+  { value: 'talk_to_expert', label: 'Talk to an expert' },
+  { value: 'our_solutions', label: 'Show our solutions' },
+  { value: 'about_askworx', label: 'About the company' },
+  { value: 'flow_quotation', label: 'Start a quote request' },
+  { value: 'flow_callback', label: 'Book a callback' },
+  { value: 'flow_service', label: 'Start a service request' },
+];
+const MAX_BUTTONS = 3; // WhatsApp's limit for reply buttons
+const BUTTON_TEXT_LIMIT = 20; // WhatsApp's limit, counted in characters
+const charCount = (text) => [...text].length; // an emoji is one character
+
+const defaultPosterButtons = () => [
+  { id: 'talk_to_expert', title: 'Talk to Expert 📞' },
+  { id: 'main_menu', title: 'Main Menu 🏠' },
+];
+
+const emptyPoster = () => ({
+  type: 'poster',
+  image_url: '',
+  caption: '',
+  scheduled_at: '',
+  buttons: defaultPosterButtons(),
+});
 
 const TYPE_TABS = [
   { value: 'quiz', label: 'Quiz' },
@@ -78,6 +106,23 @@ const describe = (campaign) =>
     ? campaign.question
     : campaign.caption || campaign.image_url || 'Poster';
 
+/** Everything wrong with a poster's buttons, or '' if they can be sent. */
+const buttonProblem = (buttons) => {
+  if (buttons.length === 0) return 'Keep at least one button so people can reply.';
+  const titles = buttons.map((b) => b.title.trim());
+  const problems = [];
+  if (titles.some((t) => !t)) problems.push('Every button needs text.');
+  if (titles.some((t) => charCount(t) > BUTTON_TEXT_LIMIT)) {
+    problems.push(`Button text can be at most ${BUTTON_TEXT_LIMIT} characters.`);
+  }
+  const filled = titles.filter(Boolean);
+  if (new Set(filled).size !== filled.length) problems.push('Two buttons cannot have the same text.');
+  if (new Set(buttons.map((b) => b.id)).size !== buttons.length) {
+    problems.push('Two buttons cannot do the same thing.');
+  }
+  return problems.join(' ');
+};
+
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState([]);
   const [total, setTotal] = useState(0);
@@ -87,8 +132,9 @@ export default function Campaigns() {
 
   // How many people a broadcast actually reaches. DESIGN.md §5: a send button
   // states its recipient count before it is pressed, and that count has to be
-  // the real one — opted-out contacts are skipped by the sender.
-  const [audience, setAudience] = useState(null);
+  // the real one. The sender skips opted-out contacts and anyone outside the
+  // 24-hour window, so only those who messaged in the last day are counted.
+  const [audience, setAudience] = useState(null); // { reachable, subscribed }
 
   const [composerOpen, setComposerOpen] = useState(false);
   const [formType, setFormType] = useState('quiz');
@@ -135,7 +181,11 @@ export default function Campaigns() {
     getContacts()
       .then(({ data }) => {
         const list = Array.isArray(data) ? data : data?.data || [];
-        setAudience(list.filter((c) => !c.opt_out).length);
+        const subscribed = list.filter((c) => !c.opt_out);
+        setAudience({
+          subscribed: subscribed.length,
+          reachable: subscribed.filter((c) => isInWindow(c.last_incoming_at)).length,
+        });
       })
       .catch((err) => {
         // Left null, so the composer says the count is unavailable rather than
@@ -157,11 +207,28 @@ export default function Campaigns() {
 
   const switchType = (type) => {
     setFormType(type);
-    setForm(type === 'quiz' ? { ...EMPTY_QUIZ } : { ...EMPTY_POSTER });
+    setForm(type === 'quiz' ? { ...EMPTY_QUIZ } : emptyPoster());
     setErrors({});
   };
 
   const setField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+  const setButton = (index, key, value) =>
+    setForm((f) => ({
+      ...f,
+      buttons: f.buttons.map((b, i) => (i === index ? { ...b, [key]: value } : b)),
+    }));
+
+  const addButton = () =>
+    setForm((f) => {
+      // Start the new button on an action no other button uses yet.
+      const used = new Set(f.buttons.map((b) => b.id));
+      const next = BUTTON_ACTIONS.find((a) => !used.has(a.value)) || BUTTON_ACTIONS[0];
+      return { ...f, buttons: [...f.buttons, { id: next.value, title: '' }] };
+    });
+
+  const removeButton = (index) =>
+    setForm((f) => ({ ...f, buttons: f.buttons.filter((_, i) => i !== index) }));
 
   const validate = () => {
     const next = {};
@@ -186,6 +253,8 @@ export default function Campaigns() {
       if (uploadSource === 'local' && !form.localFile) {
         next.localFile = 'Choose an image file to send.';
       }
+      const problem = buttonProblem(form.buttons || []);
+      if (problem) next.buttons = problem;
     }
 
     setErrors(next);
@@ -199,6 +268,9 @@ export default function Campaigns() {
 
     try {
       const payload = { ...form, type: formType };
+      if (formType === 'poster') {
+        payload.buttons = form.buttons.map((b) => ({ id: b.id, title: b.title.trim() }));
+      }
 
       if (formType === 'poster' && uploadSource === 'local') {
         setUploading(true);
@@ -274,8 +346,12 @@ export default function Campaigns() {
 
   const audienceLine = useMemo(() => {
     if (audience === null) return 'The number of recipients could not be read just now.';
-    if (audience === 0) return 'No contact is currently subscribed, so this would reach nobody.';
-    return `Goes to ${audience} ${audience === 1 ? 'contact' : 'contacts'}. Anyone who has opted out is skipped.`;
+    if (audience.reachable === 0) {
+      return 'Right now nobody has messaged in the last 24 hours, so this would reach nobody. The list is checked again when it goes out.';
+    }
+    return `Reachable now, free: ${audience.reachable} of ${audience.subscribed} subscribed ${
+      audience.subscribed === 1 ? 'contact' : 'contacts'
+    } — the ones who messaged in the last 24 hours. Checked again when it goes out.`;
   }, [audience]);
 
   const resultData = results ? analytics[results.id] : null;
@@ -285,7 +361,7 @@ export default function Campaigns() {
       <PageHeader
         eyebrow="WhatsApp bot"
         title="Broadcasts"
-        intro="Quizzes and posters sent to every subscribed contact at a time you choose. Nothing goes out until its scheduled moment, and a broadcast can be cancelled up to that point."
+        intro="Quizzes and posters sent at a time you choose to every subscribed contact who has messaged in the last 24 hours — the people WhatsApp lets the bot message for free. Nothing goes out until its scheduled moment, and a broadcast can be cancelled up to that point."
         action={
           <Button onClick={openComposer}>
             <Plus />
@@ -293,6 +369,20 @@ export default function Campaigns() {
           </Button>
         }
       />
+
+      <div className="mb-6 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl border border-border bg-white px-4 py-3">
+        <p className="text-[13px] font-medium text-ink">
+          Reachable now, free:{' '}
+          <span className="tabular-nums">
+            {audience === null ? '—' : `${audience.reachable} of ${audience.subscribed}`}
+          </span>{' '}
+          subscribed contacts
+        </p>
+        <p className="text-[12px] leading-relaxed text-text-secondary">
+          Only people who messaged in the last 24 hours can receive a broadcast. Everyone else
+          would need a paid WhatsApp template.
+        </p>
+      </div>
 
       {loadError && (
         <div
@@ -345,7 +435,9 @@ export default function Campaigns() {
                         <div className="min-w-0">
                           <p className="font-medium text-ink">{describe(campaign)}</p>
                           <p className="mt-1 text-[12px] leading-snug text-text-secondary">
-                            {type.label} — {type.summary}
+                            {campaign.buttons?.length
+                              ? `${type.label} — buttons: ${campaign.buttons.map((b) => b.title).join(' · ')}`
+                              : `${type.label} — ${type.summary}`}
                           </p>
                         </div>
                       </div>
@@ -399,9 +491,9 @@ export default function Campaigns() {
                       No broadcasts yet
                     </p>
                     <p className="mx-auto mt-2 max-w-[46ch] text-[13px] leading-relaxed text-text-secondary">
-                      A broadcast is one message sent to every subscribed contact at once — a
-                      quiz they can answer, or a poster to look at. Use “Schedule a broadcast”
-                      to write your first one.
+                      A broadcast is one message sent at once to everyone who has messaged in
+                      the last 24 hours — a quiz they can answer, or a poster with buttons to
+                      tap. Use “Schedule a broadcast” to write your first one.
                     </p>
                   </td>
                 </tr>
@@ -648,6 +740,74 @@ export default function Campaigns() {
                     Optional. The image is sent on its own if you leave this empty.
                   </p>
                 </div>
+
+                <fieldset className="space-y-3">
+                  <legend className="text-sm font-medium text-ink">Reply buttons</legend>
+                  <p className="text-[12px] leading-relaxed text-text-secondary">
+                    Shown under the image. Tapping one starts that part of the bot, and it also
+                    reopens that person’s free 24-hour window.
+                  </p>
+
+                  {(form.buttons || []).map((button, index) => {
+                    const count = charCount(button.title);
+                    const tooLong = count > BUTTON_TEXT_LIMIT;
+                    return (
+                      <div key={index} className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                        <div className="space-y-1">
+                          <Input
+                            aria-label={`Button ${index + 1} text`}
+                            value={button.title}
+                            onChange={(e) => setButton(index, 'title', e.target.value)}
+                            placeholder="Order Now"
+                            aria-invalid={!!errors.buttons && (!button.title.trim() || tooLong)}
+                          />
+                          <p
+                            className={`font-mono text-[11px] tabular-nums ${
+                              tooLong ? 'text-danger' : 'text-text-secondary'
+                            }`}
+                          >
+                            {count}/{BUTTON_TEXT_LIMIT}
+                          </p>
+                        </div>
+                        <div className="order-last col-span-2 sm:order-none sm:col-span-1">
+                          <Select
+                            aria-label={`Button ${index + 1} action`}
+                            value={button.id}
+                            onChange={(e) => setButton(index, 'id', e.target.value)}
+                          >
+                            {BUTTON_ACTIONS.map((action) => (
+                              <option key={action.value} value={action.value}>
+                                {action.label}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Remove button ${index + 1}`}
+                          onClick={() => removeButton(index)}
+                        >
+                          <X />
+                        </Button>
+                      </div>
+                    );
+                  })}
+
+                  {(form.buttons || []).length < MAX_BUTTONS && (
+                    <Button type="button" variant="outline" size="sm" onClick={addButton}>
+                      <Plus />
+                      Add a button
+                    </Button>
+                  )}
+
+                  {errors.buttons && (
+                    <p role="alert" className="text-[12px] text-danger">
+                      {errors.buttons}
+                    </p>
+                  )}
+                </fieldset>
               </>
             )}
 
