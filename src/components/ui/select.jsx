@@ -8,7 +8,7 @@ import { cn } from "../../lib/utils";
  * filters get used with a keyboard all day, and the platform control is the
  * one every operator already knows.
  */
-const Select = React.forwardRef(function Select({ className, children, ...props }, ref) {
+const Select = React.forwardRef(function Select({ className, children, hideIcon = false, ...props }, ref) {
   return (
     <div className="relative">
       <select
@@ -24,10 +24,12 @@ const Select = React.forwardRef(function Select({ className, children, ...props 
       >
         {children}
       </select>
-      <ChevronDown
-        aria-hidden="true"
-        className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-titanium-700"
-      />
+      {!hideIcon && (
+        <ChevronDown
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-titanium-700"
+        />
+      )}
     </div>
   );
 });

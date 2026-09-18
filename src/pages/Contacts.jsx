@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
-import { UserPlus, Search, MessageSquare, Trash2, AlertCircle, Send } from 'lucide-react';
+import { UserPlus, Upload, Search, MessageSquare, Trash2, AlertCircle, Send } from 'lucide-react';
 
 import { getContacts, saveContact, sendMessage, deleteContact, toggleOptOut } from '../api';
 import { formatSlug } from '../utils';
@@ -10,6 +10,7 @@ import PageHeader from '../components/PageHeader';
 import StatCard from '../components/StatCard';
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
+import ImportContactsDialog from '../components/ImportContactsDialog';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
@@ -250,10 +251,16 @@ const Contacts = () => {
         title="Contacts"
         intro="Everyone who has messaged the WhatsApp bot. They are added automatically on first contact — you only need to add someone by hand if they have not written in yet."
         action={
-          <Button onClick={() => setDialog('add')}>
-            <UserPlus />
-            Add contact
-          </Button>
+          <>
+            <Button variant="outline" onClick={() => setDialog('import')}>
+              <Upload />
+              Import contacts
+            </Button>
+            <Button onClick={() => setDialog('add')}>
+              <UserPlus />
+              Add contact
+            </Button>
+          </>
         }
       />
 
@@ -480,6 +487,13 @@ const Contacts = () => {
           </DialogFooter>
         </form>
       </Dialog>
+
+      <ImportContactsDialog
+        open={dialog === 'import'}
+        onClose={() => setDialog(null)}
+        existingContacts={contacts}
+        onImported={load}
+      />
 
       <Dialog open={dialog === 'message'} onClose={() => setDialog(null)} labelledBy="send-message">
         <DialogHeader

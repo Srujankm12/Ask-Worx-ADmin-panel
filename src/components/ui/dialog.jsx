@@ -19,11 +19,16 @@ function Dialog({ open, onClose, children, size = "md", labelledBy }) {
   const panelRef = React.useRef(null);
   const reduced = useReducedMotion();
 
+  const onCloseRef = React.useRef(onClose);
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   React.useEffect(() => {
     if (!open) return undefined;
 
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose?.();
+      if (event.key === "Escape") onCloseRef.current?.();
     };
     document.addEventListener("keydown", onKeyDown);
 
@@ -38,7 +43,7 @@ function Dialog({ open, onClose, children, size = "md", labelledBy }) {
       document.body.style.overflow = previousOverflow;
       if (previouslyFocused instanceof HTMLElement) previouslyFocused.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   const widths = {
     sm: "max-w-md",

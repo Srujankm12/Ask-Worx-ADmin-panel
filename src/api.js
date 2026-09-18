@@ -57,7 +57,7 @@ api.interceptors.response.use(
  * who is signed in.
  */
 export const login = async (email, password) => {
-  const { data } = await api.post('/login', { email, password });
+  const { data } = await api.post('/login', { email, password }, { timeout: 15000 });
   if (!data?.token) throw new Error('The server did not return a session token.');
   localStorage.setItem(TOKEN_KEY, data.token);
   if (data.email) localStorage.setItem(EMAIL_KEY, data.email);
@@ -78,6 +78,8 @@ export const getCallbacks = () => api.get('/callbacks');
 export const markCallbackDone = (id) => api.post('/callbacks/mark-done', { id });
 export const getContacts = () => api.get('/contacts');
 export const saveContact = (data) => api.post('/contacts', data);
+
+export const importContacts = (contacts) => api.post('/contacts/import', { contacts });
 export const deleteContact = (id) => api.delete(`/contacts/${id}`);
 export const toggleOptOut = (id, optOut) => api.post(`/contacts/${id}/opt-out`, { opt_out: optOut });
 export const getMessages = (params) => api.get('/messages', { params });
