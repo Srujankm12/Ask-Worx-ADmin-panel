@@ -45,17 +45,3 @@ export const UNRECOGNISED_STATUS = {
 };
 
 export const getBroadcastStatus = (status) => BROADCAST_STATUS[status] || UNRECOGNISED_STATUS;
-
-export const BROADCAST_TYPES = {
-  quiz: {
-    label: 'Quiz',
-    summary: 'A question with three options. Replies are counted and scored.',
-  },
-  poster: {
-    label: 'Poster',
-    summary: 'An image with a caption and up to three buttons people can tap.',
-  },
-};
-
-export const getBroadcastType = (type) =>
-  BROADCAST_TYPES[type] || { label: 'Broadcast', summary: '' };

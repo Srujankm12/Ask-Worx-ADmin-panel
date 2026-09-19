@@ -73,35 +73,91 @@ const SAMPLE = {
   phone: '+91 98765 43210',
 };
 
-export function WhatsAppPreview({ message, caption, className, empty = 'Nothing to preview yet.' }) {
+export function WhatsAppPreview({
+  message,
+  caption,
+  title,
+  description,
+  image,
+  buttons,
+  className,
+  empty = 'Nothing to preview yet.',
+}) {
   const text = (message || '').trim();
+  const titleText = (title || '').trim();
+  const descriptionText = (description || '').trim();
+  const hasTitleOrDescription = Boolean(titleText || descriptionText);
+  const hasButtons = Array.isArray(buttons) && buttons.length > 0;
+  const hasContent = Boolean(text || hasTitleOrDescription || image);
+  const countSource = hasTitleOrDescription
+    ? [titleText, descriptionText].filter(Boolean).join('\n\n')
+    : text;
 
   return (
     <div className={cn('overflow-hidden rounded-xl border border-border bg-paper', className)}>
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <p className="spec-label">As the customer sees it</p>
-        {text && (
+        {countSource && (
           <p className="font-mono text-[10px] tabular-nums text-titanium-700">
-            {text.length} chars · {text.split('\n').length} lines
+            {countSource.length} chars · {countSource.split('\n').length} lines
           </p>
         )}
       </div>
 
       <div className="p-4">
-        {text ? (
-          <div className="max-w-[420px] rounded-xl rounded-tl-sm border border-border bg-white px-3.5 py-2.5 shadow-card">
-            <p className="whitespace-pre-wrap break-words text-[13px] leading-[1.55] text-body-text">
-              {text.split('\n').map((line, i) => (
-                <React.Fragment key={i}>
-                  {i > 0 && <br />}
-                  {formatSegment(line, `l${i}`)}
-                </React.Fragment>
-              ))}
-            </p>
+        {hasContent ? (
+          <div className="max-w-[420px] overflow-hidden rounded-xl rounded-tl-sm border border-border bg-white shadow-card">
+            {image && (
+              <img
+                src={image}
+                alt=""
+                className="aspect-[4/3] w-full bg-paper object-cover"
+              />
+            )}
+            {hasTitleOrDescription ? (
+              <div className="space-y-2 px-3.5 py-2.5">
+                {titleText && (
+                  <p className="text-[13px] font-semibold leading-[1.4] text-ink">{titleText}</p>
+                )}
+                {descriptionText && (
+                  <p className="whitespace-pre-wrap break-words text-[13px] leading-[1.55] text-body-text">
+                    {descriptionText.split('\n').map((line, i) => (
+                      <React.Fragment key={i}>
+                        {i > 0 && <br />}
+                        {formatSegment(line, `d${i}`)}
+                      </React.Fragment>
+                    ))}
+                  </p>
+                )}
+              </div>
+            ) : (
+              text && (
+                <p className="whitespace-pre-wrap break-words px-3.5 py-2.5 text-[13px] leading-[1.55] text-body-text">
+                  {text.split('\n').map((line, i) => (
+                    <React.Fragment key={i}>
+                      {i > 0 && <br />}
+                      {formatSegment(line, `l${i}`)}
+                    </React.Fragment>
+                  ))}
+                </p>
+              )
+            )}
             {caption && (
-              <p className="mt-2 border-t border-border pt-2 text-[12px] text-text-secondary">
+              <p className="border-t border-border px-3.5 py-2 text-[12px] text-text-secondary">
                 {caption}
               </p>
+            )}
+            {hasButtons && (
+              <div className="border-t border-border">
+                {buttons.map((button, i) => (
+                  <p
+                    key={i}
+                    className="border-b border-border px-3.5 py-2 text-center text-[13px] font-medium text-primary last:border-b-0"
+                  >
+                    {button.title.trim() || 'Button'}
+                  </p>
+                ))}
+              </div>
             )}
           </div>
         ) : (

@@ -2,32 +2,29 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import {
   AlertCircle,
-  BarChart2,
   CalendarClock,
   CheckCircle2,
   Image as ImageIcon,
-  MessageCircleQuestion,
+  Megaphone,
   Plus,
+  Send,
   Trash2,
-  X,
 } from 'lucide-react';
 
 import {
   getCampaigns,
   createCampaign,
   deleteCampaign,
-  getCampaignAnalytics,
   uploadImage,
   getContacts,
 } from '../api';
-import { formatSlug } from '../utils';
-import { getBroadcastStatus, getBroadcastType } from '../lib/broadcastStatus';
+import { getBroadcastStatus } from '../lib/broadcastStatus';
 import { isInWindow } from '../lib/replyWindow';
 
 import PageHeader from '../components/PageHeader';
 import Modal from '../components/Modal';
 import ConfirmModal from '../components/ConfirmModal';
-import AnswerChart from '../components/charts/AnswerChart';
+import WhatsAppPreview from '../components/WhatsAppPreview';
 import { Reveal } from '../components/motion/Reveal';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
@@ -35,7 +32,6 @@ import { Card } from '../components/ui/card';
 import { Tabs } from '../components/ui/tabs';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { Select } from '../components/ui/select';
 import { Textarea } from '../components/ui/textarea';
 import { Dialog, DialogHeader, DialogBody, DialogFooter } from '../components/ui/dialog';
 import {
@@ -48,80 +44,68 @@ import {
 } from '../components/ui/table';
 
 const PAGE_SIZE = 10;
-const EXPLANATION_LIMIT = 300;
-
-const EMPTY_QUIZ = {
-  type: 'quiz',
-  question: '',
-  option_a: '',
-  option_b: '',
-  option_c: '',
-  correct_answer: 'A',
-  explanation: '',
-  youtube_link: '',
-  scheduled_at: '',
-};
-
-// What a poster button can do when it is tapped. Mirrors posterButtonActions
-// in the bot's scheduler.go, which rejects anything not listed there.
-const BUTTON_ACTIONS = [
-  { value: 'main_menu', label: 'Open the main menu' },
-  { value: 'talk_to_expert', label: 'Talk to an expert' },
-  { value: 'our_solutions', label: 'Show our solutions' },
-  { value: 'about_askworx', label: 'About the company' },
-  { value: 'flow_quotation', label: 'Start a quote request' },
-  { value: 'flow_callback', label: 'Book a callback' },
-  { value: 'flow_service', label: 'Start a service request' },
-];
-const MAX_BUTTONS = 3; // WhatsApp's limit for reply buttons
-const BUTTON_TEXT_LIMIT = 20; // WhatsApp's limit, counted in characters
-const charCount = (text) => [...text].length; // an emoji is one character
-
-const defaultPosterButtons = () => [
-  { id: 'talk_to_expert', title: 'Talk to Expert 📞' },
-  { id: 'main_menu', title: 'Main Menu 🏠' },
-];
 
 const emptyPoster = () => ({
   type: 'poster',
   image_url: '',
-  caption: '',
+  title: '',
+  description: '',
   scheduled_at: '',
-  buttons: defaultPosterButtons(),
 });
-
-const TYPE_TABS = [
-  { value: 'quiz', label: 'Quiz' },
-  { value: 'poster', label: 'Poster' },
-];
 
 const SOURCE_TABS = [
   { value: 'url', label: 'Link' },
   { value: 'local', label: 'Upload' },
 ];
 
-/** A broadcast's own words, for the list and for the cancel confirmation. */
-const describe = (campaign) =>
-  campaign.type === 'quiz'
-    ? campaign.question
-    : campaign.caption || campaign.image_url || 'Poster';
+const WHEN_TABS = [
+  { value: 'now', label: 'Send now' },
+  { value: 'later', label: 'Schedule' },
+];
 
-/** Everything wrong with a poster's buttons, or '' if they can be sent. */
-const buttonProblem = (buttons) => {
-  if (buttons.length === 0) return 'Keep at least one button so people can reply.';
-  const titles = buttons.map((b) => b.title.trim());
-  const problems = [];
-  if (titles.some((t) => !t)) problems.push('Every button needs text.');
-  if (titles.some((t) => charCount(t) > BUTTON_TEXT_LIMIT)) {
-    problems.push(`Button text can be at most ${BUTTON_TEXT_LIMIT} characters.`);
-  }
-  const filled = titles.filter(Boolean);
-  if (new Set(filled).size !== filled.length) problems.push('Two buttons cannot have the same text.');
-  if (new Set(buttons.map((b) => b.id)).size !== buttons.length) {
-    problems.push('Two buttons cannot do the same thing.');
-  }
-  return problems.join(' ');
-};
+// Ready-made posters to start a broadcast from, one per AskWorX service.
+// Images and copy are drawn from the live askworx.in service pages; everything
+// stays editable after picking one.
+const TEMPLATES = [
+  {
+    id: 'industrial-automation',
+    label: 'Industrial Automation',
+    image: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=1400&q=80',
+    title: 'Industrial automation built for reliable production.',
+    description:
+      'We design, program and commission PLC and SCADA control systems for machines and complete production lines — including safety interlocks, motion control and full commissioning from the first I/O list through to go-live.\n\nLet\'s discuss your automation requirement.',
+  },
+  {
+    id: 'iiot-cloud',
+    label: 'IIoT & Cloud',
+    image: 'https://images.unsplash.com/photo-1544197150-b99a580bb7a8?w=1400&q=80',
+    title: 'Connect your plant to the cloud.',
+    description:
+      'We connect PLCs, drives and meters over OPC-UA, MQTT and Modbus through secure industrial gateways into a cloud platform your team can use — live dashboards, alarm notifications, energy analytics and historians that keep every trend.\n\nLet\'s make your plant data useful.',
+  },
+  {
+    id: 'software-development',
+    label: 'Software Development',
+    image: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?w=1400&q=80',
+    title: 'Software built around your operations.',
+    description:
+      'We build custom ERP, CRM and SaaS platforms, operations dashboards and system integrations — engineered by a team that understands how your plant and business actually work, and built to scale from day one.\n\nLet\'s discuss what you need to build.',
+  },
+  {
+    id: 'whatsapp-automation',
+    label: 'WhatsApp Automation',
+    image: 'https://images.unsplash.com/photo-1611746872915-64382b5c76da?w=1400&q=80',
+    title: 'Turn WhatsApp into a smarter business channel.',
+    description:
+      'We build AI-powered WhatsApp bots that answer sales enquiries instantly, qualify leads, book appointments and follow up automatically — and on the factory side, escalate alarms to the right engineer in seconds.\n\nLet\'s automate your WhatsApp workflow.',
+  },
+];
+
+/** A broadcast's own words, for the list and for the cancel confirmation. */
+const describe = (campaign) => campaign.title || campaign.caption || campaign.image_url || 'Poster';
+
+/** A broadcast whose time has come: the bot is sending it now. */
+const isDue = (c) => c.scheduled_at && new Date(c.scheduled_at) <= new Date();
 
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState([]);
@@ -137,15 +121,15 @@ export default function Campaigns() {
   const [audience, setAudience] = useState(null); // { reachable, subscribed }
 
   const [composerOpen, setComposerOpen] = useState(false);
-  const [formType, setFormType] = useState('quiz');
-  const [form, setForm] = useState(EMPTY_QUIZ);
+  const [form, setForm] = useState(emptyPoster);
+  const [templateId, setTemplateId] = useState('');
+  const [when, setWhen] = useState('now');
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [uploadSource, setUploadSource] = useState('url');
   const [uploading, setUploading] = useState(false);
+  const [localPreview, setLocalPreview] = useState('');
 
-  const [results, setResults] = useState(null);
-  const [analytics, setAnalytics] = useState({});
   const [modal, setModal] = useState({ open: false, title: '', message: '', type: 'success' });
   const [confirmCancel, setConfirmCancel] = useState(null);
 
@@ -161,7 +145,9 @@ export default function Campaigns() {
     try {
       setLoading(true);
       const { data } = await getCampaigns({ limit: PAGE_SIZE, offset: page * PAGE_SIZE });
-      setCampaigns(data.data || []);
+      // Anything else in the data (such as older quiz broadcasts) is not part
+      // of this flow any more, so it is left out here.
+      setCampaigns((data.data || []).filter((c) => c.type === 'poster'));
       setTotal(data.total || 0);
     } catch (err) {
       console.error(err);
@@ -176,6 +162,17 @@ export default function Campaigns() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // While a broadcast is going out, keep the list current so it flips to
+  // Sent by itself.
+  const inFlight = campaigns.some(
+    (c) => c.status === 'sending' || (c.status === 'scheduled' && isDue(c)),
+  );
+  useEffect(() => {
+    if (!inFlight) return undefined;
+    const interval = setInterval(() => load(), 3000);
+    return () => clearInterval(interval);
+  }, [inFlight, load]);
 
   useEffect(() => {
     getContacts()
@@ -195,66 +192,55 @@ export default function Campaigns() {
       });
   }, []);
 
+  // Free the object URL behind an uploaded poster's preview.
+  useEffect(() => () => localPreview && URL.revokeObjectURL(localPreview), [localPreview]);
+
   const lastPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
 
-  const openComposer = () => {
-    setFormType('quiz');
-    setForm(EMPTY_QUIZ);
+  const openComposer = (template) => {
+    setForm(emptyPoster());
+    setTemplateId('');
+    setWhen('now');
     setUploadSource('url');
+    setLocalPreview('');
     setErrors({});
+    if (template) applyTemplate(template);
     setComposerOpen(true);
   };
 
-  const switchType = (type) => {
-    setFormType(type);
-    setForm(type === 'quiz' ? { ...EMPTY_QUIZ } : emptyPoster());
+  const applyTemplate = (template) => {
+    setTemplateId(template.id);
+    setUploadSource('url');
+    setLocalPreview('');
+    setForm((f) => ({
+      ...f,
+      image_url: template.image,
+      title: template.title,
+      description: template.description,
+      localFile: undefined,
+    }));
     setErrors({});
   };
 
   const setField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 
-  const setButton = (index, key, value) =>
-    setForm((f) => ({
-      ...f,
-      buttons: f.buttons.map((b, i) => (i === index ? { ...b, [key]: value } : b)),
-    }));
-
-  const addButton = () =>
-    setForm((f) => {
-      // Start the new button on an action no other button uses yet.
-      const used = new Set(f.buttons.map((b) => b.id));
-      const next = BUTTON_ACTIONS.find((a) => !used.has(a.value)) || BUTTON_ACTIONS[0];
-      return { ...f, buttons: [...f.buttons, { id: next.value, title: '' }] };
-    });
-
-  const removeButton = (index) =>
-    setForm((f) => ({ ...f, buttons: f.buttons.filter((_, i) => i !== index) }));
+  const chooseFile = (file) => {
+    setField('localFile', file);
+    setLocalPreview(file ? URL.createObjectURL(file) : '');
+  };
 
   const validate = () => {
     const next = {};
-    if (!form.scheduled_at) next.scheduled_at = 'Choose the date and time it should go out.';
-
-    if (formType === 'quiz') {
-      if (!form.question.trim()) next.question = 'Write the question people will be asked.';
-      if (!form.option_a.trim()) next.option_a = 'Option A cannot be empty.';
-      if (!form.option_b.trim()) next.option_b = 'Option B cannot be empty.';
-      if (!form.option_c.trim()) next.option_c = 'Option C cannot be empty.';
-      if (!form.explanation.trim()) {
-        next.explanation = 'Explain the answer — it is sent to everyone who replies.';
-      } else if (form.explanation.length > EXPLANATION_LIMIT) {
-        next.explanation = `Keep the explanation under ${EXPLANATION_LIMIT} characters.`;
-      }
+    if (uploadSource === 'url' && !form.image_url.trim()) {
+      next.image_url = 'Paste the web address of the image.';
     }
-
-    if (formType === 'poster') {
-      if (uploadSource === 'url' && !form.image_url.trim()) {
-        next.image_url = 'Paste the web address of the image.';
-      }
-      if (uploadSource === 'local' && !form.localFile) {
-        next.localFile = 'Choose an image file to send.';
-      }
-      const problem = buttonProblem(form.buttons || []);
-      if (problem) next.buttons = problem;
+    if (uploadSource === 'local' && !form.localFile) {
+      next.localFile = 'Choose an image file to send.';
+    }
+    if (!form.title.trim()) next.title = 'Enter a title.';
+    if (!form.description.trim()) next.description = 'Enter a description.';
+    if (when === 'later' && !form.scheduled_at) {
+      next.scheduled_at = 'Choose when it should go out.';
     }
 
     setErrors(next);
@@ -267,33 +253,30 @@ export default function Campaigns() {
     setSubmitting(true);
 
     try {
-      const payload = { ...form, type: formType };
-      if (formType === 'poster') {
-        payload.buttons = form.buttons.map((b) => ({ id: b.id, title: b.title.trim() }));
-      }
+      const payload = { ...form, type: 'poster' };
 
-      if (formType === 'poster' && uploadSource === 'local') {
+      if (uploadSource === 'local') {
         setUploading(true);
         const { data } = await uploadImage(form.localFile);
         payload.image_url = `${API_BASE}${data.url}`;
         setUploading(false);
       }
+
+      // "Send now" is a schedule for this minute: the broadcaster runs on a
+      // poll and picks it up on its next pass.
+      const at = when === 'now' ? new Date() : new Date(form.scheduled_at);
       delete payload.localFile;
 
-      // datetime-local has no zone; Date reads it in this computer's zone and
-      // toISOString hands the server the matching instant.
-      await createCampaign({
-        ...payload,
-        scheduled_at: new Date(form.scheduled_at).toISOString(),
-      });
+      await createCampaign({ ...payload, scheduled_at: at.toISOString() });
 
       setComposerOpen(false);
-      setForm(EMPTY_QUIZ);
+      const sendingNow = when === 'now';
       setModal({
         open: true,
-        title: 'Broadcast scheduled',
-        message:
-          'It will go out at the time you set. You can cancel it from this page any time before then.',
+        title: sendingNow ? 'Broadcast on its way' : 'Broadcast scheduled',
+        message: sendingNow
+          ? 'It is going out now to everyone who messaged in the last 24 hours.'
+          : 'It will go out at the time you set. You can cancel it from this page any time before then.',
         type: 'success',
       });
       load();
@@ -301,9 +284,9 @@ export default function Campaigns() {
       console.error(err);
       setModal({
         open: true,
-        title: 'Nothing was scheduled',
+        title: 'Could not send broadcast',
         message:
-          'The broadcast was not saved, so nobody will receive it. Check that every field is filled in and that the send time is in the future, then try again.',
+          'The broadcast was not saved, so nobody will receive it. Check that every field is filled in, then try again.',
         type: 'error',
       });
     } finally {
@@ -330,20 +313,6 @@ export default function Campaigns() {
     }
   };
 
-  const openResults = async (campaign) => {
-    setResults(campaign);
-    if (analytics[campaign.id]) return;
-    try {
-      const { data } = await getCampaignAnalytics(campaign.id);
-      setAnalytics((prev) => ({ ...prev, [campaign.id]: data }));
-    } catch (err) {
-      // Without this marker the panel cannot tell a quiz nobody answered from
-      // one whose figures failed to load, and shows an honest zero for both.
-      console.error(err);
-      setAnalytics((prev) => ({ ...prev, [campaign.id]: { failed: true } }));
-    }
-  };
-
   const audienceLine = useMemo(() => {
     if (audience === null) return 'The number of recipients could not be read just now.';
     if (audience.reachable === 0) {
@@ -354,16 +323,16 @@ export default function Campaigns() {
     } — the ones who messaged in the last 24 hours. Checked again when it goes out.`;
   }, [audience]);
 
-  const resultData = results ? analytics[results.id] : null;
+  const previewImage = uploadSource === 'local' ? localPreview : (form.image_url || '').trim();
 
   return (
     <>
       <PageHeader
         eyebrow="WhatsApp bot"
         title="Broadcasts"
-        intro="Quizzes and posters sent at a time you choose to every subscribed contact who has messaged in the last 24 hours — the people WhatsApp lets the bot message for free. Nothing goes out until its scheduled moment, and a broadcast can be cancelled up to that point."
+        intro="An image and a message sent to every subscribed contact who has messaged in the last 24 hours — the people WhatsApp lets the bot message for free. Nothing goes out until its scheduled moment, and a broadcast can be cancelled up to that point."
         action={
-          <Button onClick={openComposer}>
+          <Button onClick={() => openComposer()}>
             <Plus />
             Schedule a broadcast
           </Button>
@@ -384,6 +353,31 @@ export default function Campaigns() {
         </p>
       </div>
 
+      {/* ── Start from a template ─────────────────────────────────────── */}
+      <Reveal>
+        <section className="mb-8">
+          <p className="eyebrow mb-3">Start from a template</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {TEMPLATES.map((template) => (
+              <button
+                key={template.id}
+                type="button"
+                onClick={() => openComposer(template)}
+                className="group overflow-hidden rounded-xl border border-border bg-white text-left shadow-card transition-all hover:-translate-y-0.5 hover:border-ink/30"
+              >
+                <img
+                  src={template.image}
+                  alt=""
+                  loading="lazy"
+                  className="aspect-[4/3] w-full bg-paper object-cover"
+                />
+                <p className="px-3 py-2.5 text-[13px] font-medium text-ink">{template.label}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      </Reveal>
+
       {loadError && (
         <div
           role="alert"
@@ -394,7 +388,7 @@ export default function Campaigns() {
             <p className="text-[13px] font-medium text-danger">{loadError}</p>
             <button
               type="button"
-              onClick={load}
+              onClick={() => load()}
               className="mt-1 text-[13px] font-medium text-danger underline underline-offset-2"
             >
               Try again
@@ -403,42 +397,46 @@ export default function Campaigns() {
         </div>
       )}
 
-      <Reveal>
+      <Reveal delay={0.04}>
         <Card>
           <Table>
             <TableHeader>
               <tr>
-                <TableHead className="w-[42%]">Broadcast</TableHead>
+                <TableHead className="w-[46%]">Broadcast</TableHead>
                 <TableHead className="w-36 text-center">Status</TableHead>
                 <TableHead className="w-56 text-center">Goes out</TableHead>
                 <TableHead className="w-24 text-center">Sent to</TableHead>
-                <TableHead className="w-44 text-right">Actions</TableHead>
+                <TableHead className="w-24 text-right">Cancel</TableHead>
               </tr>
             </TableHeader>
 
             <TableBody>
               {campaigns.map((campaign) => {
-                const status = getBroadcastStatus(campaign.status);
-                const type = getBroadcastType(campaign.type);
-                const Icon = campaign.type === 'quiz' ? MessageCircleQuestion : ImageIcon;
-
+                const status = getBroadcastStatus(
+                  campaign.status === 'scheduled' && isDue(campaign) ? 'sending' : campaign.status,
+                );
                 return (
                   <TableRow key={campaign.id}>
                     <TableCell>
                       <div className="flex items-start gap-3">
-                        <span
-                          aria-hidden="true"
-                          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-paper text-titanium-700"
-                        >
-                          <Icon className="size-4" />
-                        </span>
+                        {campaign.image_url ? (
+                          <img
+                            src={campaign.image_url}
+                            alt=""
+                            className="size-12 shrink-0 rounded-lg bg-paper object-cover"
+                          />
+                        ) : (
+                          <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-paper text-titanium-700">
+                            <ImageIcon className="size-4" />
+                          </span>
+                        )}
                         <div className="min-w-0">
                           <p className="font-medium text-ink">{describe(campaign)}</p>
-                          <p className="mt-1 text-[12px] leading-snug text-text-secondary">
-                            {campaign.buttons?.length
-                              ? `${type.label} — buttons: ${campaign.buttons.map((b) => b.title).join(' · ')}`
-                              : `${type.label} — ${type.summary}`}
-                          </p>
+                          {campaign.buttons?.length > 0 && (
+                            <p className="mt-1 text-[12px] leading-snug text-text-secondary">
+                              Buttons: {campaign.buttons.map((b) => b.title).join(' · ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </TableCell>
@@ -461,24 +459,16 @@ export default function Campaigns() {
                     </TableCell>
 
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {campaign.status === 'sent' && campaign.type === 'quiz' && (
-                          <Button variant="ghost" size="xs" onClick={() => openResults(campaign)}>
-                            <BarChart2 />
-                            View results
-                          </Button>
-                        )}
-                        {campaign.status === 'scheduled' && (
-                          <Button
-                            variant="destructive-outline"
-                            size="icon-xs"
-                            aria-label={`Cancel the broadcast “${describe(campaign)}”`}
-                            onClick={() => setConfirmCancel(campaign)}
-                          >
-                            <Trash2 />
-                          </Button>
-                        )}
-                      </div>
+                      {campaign.status === 'scheduled' && !isDue(campaign) && (
+                        <Button
+                          variant="destructive-outline"
+                          size="icon-xs"
+                          aria-label={`Cancel the broadcast “${describe(campaign)}”`}
+                          onClick={() => setConfirmCancel(campaign)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -487,13 +477,12 @@ export default function Campaigns() {
               {campaigns.length === 0 && !loading && (
                 <tr>
                   <td colSpan={5} className="px-5 py-16 text-center">
-                    <p className="font-heading text-base font-bold uppercase tracking-tight text-ink">
+                    <Megaphone aria-hidden="true" className="mx-auto size-6 text-titanium-300" />
+                    <p className="mt-3 font-heading text-base font-bold uppercase tracking-tight text-ink">
                       No broadcasts yet
                     </p>
                     <p className="mx-auto mt-2 max-w-[46ch] text-[13px] leading-relaxed text-text-secondary">
-                      A broadcast is one message sent at once to everyone who has messaged in
-                      the last 24 hours — a quiz they can answer, or a poster with buttons to
-                      tap. Use “Schedule a broadcast” to write your first one.
+                      Pick a template above, or use “Schedule a broadcast” to write your own.
                     </p>
                   </td>
                 </tr>
@@ -503,9 +492,6 @@ export default function Campaigns() {
                 <tr>
                   <td colSpan={5} className="px-5 py-16 text-center">
                     <span className="mx-auto block size-6 animate-spin rounded-full border-2 border-line border-t-ink" />
-                    <p className="mt-4 font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-700">
-                      Loading broadcasts
-                    </p>
                   </td>
                 </tr>
               )}
@@ -543,293 +529,151 @@ export default function Campaigns() {
 
       {/* ── Composer ────────────────────────────────────────────────────── */}
 
-      <Dialog
-        open={composerOpen}
-        onClose={() => setComposerOpen(false)}
-        size="lg"
-        labelledBy="composer-title"
-      >
+      <Dialog open={composerOpen} onClose={() => setComposerOpen(false)} size="xl" labelledBy="composer-title">
         <DialogHeader
           id="composer-title"
           eyebrow="Broadcasts"
           title="Schedule a broadcast"
-          description="Write it now, and the bot sends it at the time you set. Nothing is sent while you are filling this in."
+          description="Pick a template or write your own. The preview shows exactly what customers get."
           onClose={() => setComposerOpen(false)}
         />
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <DialogBody className="space-y-6">
-            <div className="space-y-2">
-              <Label>What kind of broadcast</Label>
-              <Tabs
-                value={formType}
-                onValueChange={switchType}
-                items={TYPE_TABS}
-                layoutId="broadcast-type"
-              />
-              <p className="text-[12px] leading-relaxed text-text-secondary">
-                {getBroadcastType(formType).summary}
-              </p>
-            </div>
-
-            {formType === 'quiz' ? (
-              <>
+          <DialogBody>
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="space-y-6">
                 <div className="space-y-2">
-                  <Label htmlFor="question">Question</Label>
-                  <Input
-                    id="question"
-                    value={form.question || ''}
-                    onChange={(e) => setField('question', e.target.value)}
-                    placeholder="Which protocol is used for machine-to-machine communication?"
-                    aria-invalid={!!errors.question}
-                    aria-describedby={errors.question ? 'question-error' : undefined}
-                  />
-                  {errors.question && (
-                    <p id="question-error" role="alert" className="text-[12px] text-danger">
-                      {errors.question}
-                    </p>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  {[
-                    ['option_a', 'Option A'],
-                    ['option_b', 'Option B'],
-                    ['option_c', 'Option C'],
-                  ].map(([key, label]) => (
-                    <div key={key} className="space-y-2">
-                      <Label htmlFor={key}>{label}</Label>
-                      <Input
-                        id={key}
-                        value={form[key] || ''}
-                        onChange={(e) => setField(key, e.target.value)}
-                        aria-invalid={!!errors[key]}
-                        aria-describedby={errors[key] ? `${key}-error` : undefined}
-                      />
-                      {errors[key] && (
-                        <p id={`${key}-error`} role="alert" className="text-[12px] text-danger">
-                          {errors[key]}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                  <Label>Template</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {TEMPLATES.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => applyTemplate(template)}
+                        className={`rounded-full border px-3 py-1 text-[12px] font-medium transition-colors ${
+                          templateId === template.id
+                            ? 'border-ink bg-ink text-white'
+                            : 'border-border bg-white text-body-text hover:border-ink/40'
+                        }`}
+                      >
+                        {template.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="correct_answer">Which option is correct</Label>
-                  <Select
-                    id="correct_answer"
-                    className="sm:max-w-[12rem]"
-                    value={form.correct_answer}
-                    onChange={(e) => setField('correct_answer', e.target.value)}
-                  >
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="explanation">Explanation</Label>
-                  <Textarea
-                    id="explanation"
-                    rows={3}
-                    maxLength={EXPLANATION_LIMIT}
-                    value={form.explanation || ''}
-                    onChange={(e) => setField('explanation', e.target.value)}
-                    placeholder="Two or three lines saying why that answer is right."
-                    aria-invalid={!!errors.explanation}
-                    aria-describedby="explanation-help"
-                  />
-                  <p id="explanation-help" className="text-[12px] leading-relaxed text-text-secondary">
-                    Sent to everyone who replies, whatever they answered.{' '}
-                    <span className="font-mono tabular-nums">
-                      {(form.explanation || '').length}/{EXPLANATION_LIMIT}
-                    </span>
-                  </p>
-                  {errors.explanation && (
-                    <p role="alert" className="text-[12px] text-danger">
-                      {errors.explanation}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="youtube_link">Video link</Label>
-                  <Input
-                    id="youtube_link"
-                    value={form.youtube_link || ''}
-                    onChange={(e) => setField('youtube_link', e.target.value)}
-                    placeholder="https://youtube.com/..."
-                  />
-                  <p className="text-[12px] leading-relaxed text-text-secondary">
-                    Optional. Added to the end of the explanation.
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="space-y-2">
-                  <Label>Where the image comes from</Label>
+                  <Label>Photo</Label>
                   <Tabs
                     value={uploadSource}
                     onValueChange={setUploadSource}
                     items={SOURCE_TABS}
                     layoutId="broadcast-source"
                   />
-                </div>
-
-                {uploadSource === 'url' ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="image_url">Image address</Label>
+                  {uploadSource === 'url' ? (
                     <Input
-                      id="image_url"
+                      aria-label="Photo link"
                       value={form.image_url || ''}
                       onChange={(e) => setField('image_url', e.target.value)}
                       placeholder="https://example.com/poster.jpg"
                       aria-invalid={!!errors.image_url}
                       aria-describedby={errors.image_url ? 'image-url-error' : undefined}
                     />
-                    {errors.image_url && (
-                      <p id="image-url-error" role="alert" className="text-[12px] text-danger">
-                        {errors.image_url}
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Label htmlFor="poster-file">Image file</Label>
-                    <input
-                      id="poster-file"
-                      type="file"
-                      accept="image/*"
-                      disabled={uploading}
-                      onChange={(e) => setField('localFile', e.target.files[0])}
-                      className="w-full rounded-lg border border-dashed border-line-strong bg-paper p-4 text-[13px] text-text-secondary file:mr-4 file:rounded-md file:border-0 file:bg-ink file:px-4 file:py-2 file:text-[12px] file:font-medium file:text-white"
-                    />
-                    {uploading && (
-                      <p className="flex items-center gap-2 text-[12px] text-text-secondary">
-                        <span className="size-3 animate-spin rounded-full border-2 border-line border-t-ink" />
-                        Uploading — this can take a moment on a slow connection.
-                      </p>
-                    )}
-                    {!uploading && form.localFile && (
-                      <p className="flex items-center gap-1.5 text-[12px] font-medium text-success">
-                        <CheckCircle2 aria-hidden="true" className="size-3.5" />
-                        {form.localFile.name} ready to send
-                      </p>
-                    )}
-                    {errors.localFile && (
-                      <p role="alert" className="text-[12px] text-danger">
-                        {errors.localFile}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="caption">Caption</Label>
-                  <Textarea
-                    id="caption"
-                    rows={3}
-                    value={form.caption || ''}
-                    onChange={(e) => setField('caption', e.target.value)}
-                    placeholder="A line to send with the image."
-                  />
-                  <p className="text-[12px] leading-relaxed text-text-secondary">
-                    Optional. The image is sent on its own if you leave this empty.
-                  </p>
-                </div>
-
-                <fieldset className="space-y-3">
-                  <legend className="text-sm font-medium text-ink">Reply buttons</legend>
-                  <p className="text-[12px] leading-relaxed text-text-secondary">
-                    Shown under the image. Tapping one starts that part of the bot, and it also
-                    reopens that person’s free 24-hour window.
-                  </p>
-
-                  {(form.buttons || []).map((button, index) => {
-                    const count = charCount(button.title);
-                    const tooLong = count > BUTTON_TEXT_LIMIT;
-                    return (
-                      <div key={index} className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_1fr_auto]">
-                        <div className="space-y-1">
-                          <Input
-                            aria-label={`Button ${index + 1} text`}
-                            value={button.title}
-                            onChange={(e) => setButton(index, 'title', e.target.value)}
-                            placeholder="Order Now"
-                            aria-invalid={!!errors.buttons && (!button.title.trim() || tooLong)}
-                          />
-                          <p
-                            className={`font-mono text-[11px] tabular-nums ${
-                              tooLong ? 'text-danger' : 'text-text-secondary'
-                            }`}
-                          >
-                            {count}/{BUTTON_TEXT_LIMIT}
-                          </p>
-                        </div>
-                        <div className="order-last col-span-2 sm:order-none sm:col-span-1">
-                          <Select
-                            aria-label={`Button ${index + 1} action`}
-                            value={button.id}
-                            onChange={(e) => setButton(index, 'id', e.target.value)}
-                          >
-                            {BUTTON_ACTIONS.map((action) => (
-                              <option key={action.value} value={action.value}>
-                                {action.label}
-                              </option>
-                            ))}
-                          </Select>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Remove button ${index + 1}`}
-                          onClick={() => removeButton(index)}
-                        >
-                          <X />
-                        </Button>
-                      </div>
-                    );
-                  })}
-
-                  {(form.buttons || []).length < MAX_BUTTONS && (
-                    <Button type="button" variant="outline" size="sm" onClick={addButton}>
-                      <Plus />
-                      Add a button
-                    </Button>
+                  ) : (
+                    <>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        aria-label="Photo file"
+                        disabled={uploading}
+                        onChange={(e) => chooseFile(e.target.files[0])}
+                        className="w-full rounded-lg border border-dashed border-line-strong bg-paper p-4 text-[13px] text-text-secondary file:mr-4 file:rounded-md file:border-0 file:bg-ink file:px-4 file:py-2 file:text-[12px] file:font-medium file:text-white"
+                      />
+                      {uploading && (
+                        <p className="flex items-center gap-2 text-[12px] text-text-secondary">
+                          <span className="size-3 animate-spin rounded-full border-2 border-line border-t-ink" />
+                          Uploading — this can take a moment on a slow connection.
+                        </p>
+                      )}
+                      {!uploading && form.localFile && (
+                        <p className="flex items-center gap-1.5 text-[12px] font-medium text-success">
+                          <CheckCircle2 aria-hidden="true" className="size-3.5" />
+                          {form.localFile.name}
+                        </p>
+                      )}
+                    </>
                   )}
-
-                  {errors.buttons && (
-                    <p role="alert" className="text-[12px] text-danger">
-                      {errors.buttons}
+                  {(errors.image_url || errors.localFile) && (
+                    <p id="image-url-error" role="alert" className="text-[12px] text-danger">
+                      {errors.image_url || errors.localFile}
                     </p>
                   )}
-                </fieldset>
-              </>
-            )}
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="scheduled_at">Goes out at</Label>
-              <Input
-                id="scheduled_at"
-                type="datetime-local"
-                className="sm:max-w-[16rem]"
-                value={form.scheduled_at || ''}
-                onChange={(e) => setField('scheduled_at', e.target.value)}
-                aria-invalid={!!errors.scheduled_at}
-                aria-describedby={errors.scheduled_at ? 'scheduled-error' : 'scheduled-help'}
-              />
-              <p id="scheduled-help" className="text-[12px] leading-relaxed text-text-secondary">
-                Read in this computer’s time zone. It must be in the future.
-              </p>
-              {errors.scheduled_at && (
-                <p id="scheduled-error" role="alert" className="text-[12px] text-danger">
-                  {errors.scheduled_at}
-                </p>
-              )}
+                <div className="space-y-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input
+                    id="title"
+                    value={form.title || ''}
+                    onChange={(e) => setField('title', e.target.value)}
+                    placeholder="Enter a title"
+                    aria-invalid={!!errors.title}
+                  />
+                  {errors.title && (
+                    <p role="alert" className="text-[12px] text-danger">
+                      {errors.title}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    rows={6}
+                    value={form.description || ''}
+                    onChange={(e) => setField('description', e.target.value)}
+                    placeholder="Write your message here…"
+                    aria-invalid={!!errors.description}
+                  />
+                  {errors.description && (
+                    <p role="alert" className="text-[12px] text-danger">
+                      {errors.description}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>When</Label>
+                  <Tabs value={when} onValueChange={setWhen} items={WHEN_TABS} layoutId="broadcast-when" />
+                  {when === 'later' && (
+                    <>
+                      <Input
+                        type="datetime-local"
+                        aria-label="Send at"
+                        className="sm:max-w-[16rem]"
+                        value={form.scheduled_at || ''}
+                        onChange={(e) => setField('scheduled_at', e.target.value)}
+                        aria-invalid={!!errors.scheduled_at}
+                      />
+                      {errors.scheduled_at && (
+                        <p role="alert" className="text-[12px] text-danger">
+                          {errors.scheduled_at}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="lg:sticky lg:top-0 lg:self-start">
+                <WhatsAppPreview
+                  title={form.title}
+                  description={form.description}
+                  image={previewImage}
+                  empty="Pick a template or write a message to see it here."
+                />
+              </div>
             </div>
           </DialogBody>
 
@@ -841,140 +685,18 @@ export default function Campaigns() {
                 Cancel
               </Button>
               <Button type="submit" disabled={submitting}>
-                <CalendarClock />
-                {submitting ? 'Scheduling…' : 'Schedule broadcast'}
+                {when === 'now' ? <Send /> : <CalendarClock />}
+                {submitting
+                  ? when === 'now'
+                    ? 'Sending…'
+                    : 'Scheduling…'
+                  : when === 'now'
+                    ? 'Send broadcast'
+                    : 'Schedule broadcast'}
               </Button>
             </div>
           </DialogFooter>
         </form>
-      </Dialog>
-
-      {/* ── Quiz results ────────────────────────────────────────────────── */}
-
-      <Dialog open={!!results} onClose={() => setResults(null)} size="xl" labelledBy="results-title">
-        {results && (
-          <>
-            <DialogHeader
-              id="results-title"
-              eyebrow="Quiz results"
-              title={results.question || 'Quiz'}
-              description={`Sent ${format(parseISO(results.scheduled_at), "d MMMM yyyy 'at' h:mm a")}.`}
-              onClose={() => setResults(null)}
-            />
-
-            <DialogBody className="space-y-8">
-              {!resultData ? (
-                <div className="py-10 text-center">
-                  <span className="mx-auto block size-6 animate-spin rounded-full border-2 border-line border-t-ink" />
-                  <p className="mt-4 font-mono text-[10px] tracking-[0.22em] uppercase text-titanium-700">
-                    Loading results
-                  </p>
-                </div>
-              ) : resultData.failed ? (
-                <div role="alert" className="flex items-start gap-3 rounded-xl border border-danger/25 bg-danger-light px-4 py-3">
-                  <AlertCircle aria-hidden="true" className="mt-1 size-4 shrink-0 text-danger" />
-                  <p className="text-[13px] text-danger">
-                    The results could not be read. This does not mean nobody answered — try
-                    opening them again in a moment.
-                  </p>
-                </div>
-              ) : (
-                <>
-                  <div className="hairline-grid grid grid-cols-2 overflow-hidden rounded-xl sm:grid-cols-4">
-                    {[
-                      ['Sent to', resultData.total_sent, 'contacts'],
-                      ['Replied', resultData.total_answers, 'of them'],
-                      ['Right', resultData.correct, 'answers'],
-                      ['Wrong', resultData.incorrect, 'answers'],
-                    ].map(([label, value, hint]) => (
-                      <div key={label} className="bg-white px-5 py-4">
-                        <p className="spec-label">{label}</p>
-                        <p className="mt-2 font-heading text-2xl font-extrabold tabular-nums text-ink">
-                          {value ?? 0}
-                        </p>
-                        <p className="mt-1 text-[12px] text-text-secondary">{hint}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {resultData.total_answers > 0 ? (
-                    <>
-                      <div>
-                        <p className="eyebrow">What people chose</p>
-                        <AnswerChart
-                          className="mt-4"
-                          total={resultData.total_answers}
-                          correctAnswer={results.correct_answer}
-                          options={[
-                            { key: 'A', label: results.option_a, count: resultData.answer_a || 0 },
-                            { key: 'B', label: results.option_b, count: resultData.answer_b || 0 },
-                            { key: 'C', label: results.option_c, count: resultData.answer_c || 0 },
-                          ]}
-                        />
-                        <p className="mt-4 text-[13px] text-text-secondary">
-                          {Math.round((resultData.correct / resultData.total_answers) * 100)}% of
-                          the people who replied got it right.
-                        </p>
-                      </div>
-
-                      <div>
-                        <p className="eyebrow mb-4">Who answered</p>
-                        <Table>
-                          <TableHeader>
-                            <tr>
-                              <TableHead>Contact</TableHead>
-                              <TableHead className="w-24 text-center">Chose</TableHead>
-                              <TableHead className="w-32 text-right">Result</TableHead>
-                            </tr>
-                          </TableHeader>
-                          <TableBody>
-                            {(resultData.responses || []).map((response, index) => (
-                              <TableRow key={`${response.phone}-${index}`}>
-                                <TableCell>
-                                  <p className="font-medium text-ink">
-                                    {response.name ? formatSlug(response.name) : 'Name not given'}
-                                  </p>
-                                  <p className="mt-1 font-mono text-[11px] text-titanium-700">
-                                    +{response.phone}
-                                  </p>
-                                </TableCell>
-                                <TableCell className="text-center font-mono tabular-nums text-ink">
-                                  {response.answer}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Badge variant={response.is_correct ? 'success' : 'danger'}>
-                                    {response.is_correct ? 'Right' : 'Wrong'}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="py-8 text-center">
-                      <p className="font-heading text-base font-bold uppercase tracking-tight text-ink">
-                        Nobody has replied yet
-                      </p>
-                      <p className="mx-auto mt-2 max-w-[46ch] text-[13px] leading-relaxed text-text-secondary">
-                        The quiz reached {resultData.total_sent ?? 0}{' '}
-                        {resultData.total_sent === 1 ? 'contact' : 'contacts'}. Answers appear
-                        here as people reply in WhatsApp.
-                      </p>
-                    </div>
-                  )}
-                </>
-              )}
-            </DialogBody>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setResults(null)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </>
-        )}
       </Dialog>
 
       <ConfirmModal
