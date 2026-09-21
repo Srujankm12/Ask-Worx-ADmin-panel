@@ -1,10 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format, parseISO } from 'date-fns';
 import {
   AlertCircle,
   CalendarClock,
-  CheckCircle2,
-  Image as ImageIcon,
   Megaphone,
   Plus,
   Send,
@@ -15,7 +13,6 @@ import {
   getCampaigns,
   createCampaign,
   deleteCampaign,
-  uploadImage,
   getContacts,
 } from '../api';
 import { getBroadcastStatus } from '../lib/broadcastStatus';
@@ -57,6 +54,19 @@ const SOURCE_TABS = [
   { value: 'url', label: 'Link' },
   { value: 'local', label: 'Upload' },
 ];
+
+// Kept in sync with the backend's own check in parseCampaignMultipart
+// (admin.go) — the frontend check is a courtesy, not the real boundary.
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const IMAGE_TYPE_ERROR = 'Only JPG, JPEG, PNG and WEBP images are allowed.';
+const IMAGE_SIZE_ERROR = 'Image size must be less than or equal to 2 MB.';
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 KB';
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+};
 
 const WHEN_TABS = [
   { value: 'now', label: 'Send now' },
@@ -127,18 +137,11 @@ export default function Campaigns() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [uploadSource, setUploadSource] = useState('url');
-  const [uploading, setUploading] = useState(false);
   const [localPreview, setLocalPreview] = useState('');
+  const fileInputRef = useRef(null);
 
   const [modal, setModal] = useState({ open: false, title: '', message: '', type: 'success' });
   const [confirmCancel, setConfirmCancel] = useState(null);
-
-  // Absolute URL for an uploaded image, so the file the operator picked is
-  // reachable from WhatsApp's servers rather than only from this browser.
-  const API_BASE =
-    import.meta.env.VITE_API_URL && import.meta.env.VITE_API_URL.includes('localhost')
-      ? import.meta.env.VITE_API_URL
-      : window.location.origin;
 
   const load = useCallback(async () => {
     setLoadError('');
@@ -224,9 +227,29 @@ export default function Campaigns() {
 
   const setField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 
+  // Selecting a file re-validates it immediately: type first (an unsupported
+  // format is rejected outright), then size, so the composer never holds an
+  // invalid file behind a preview that looks fine.
   const chooseFile = (file) => {
+    if (!file) {
+      setField('localFile', undefined);
+      setErrors((e) => ({ ...e, localFile: undefined }));
+      return;
+    }
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setField('localFile', undefined);
+      setErrors((e) => ({ ...e, localFile: IMAGE_TYPE_ERROR }));
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setField('localFile', undefined);
+      setErrors((e) => ({ ...e, localFile: IMAGE_SIZE_ERROR }));
+      return;
+    }
+
+    setErrors((e) => ({ ...e, localFile: undefined }));
     setField('localFile', file);
-    setLocalPreview(file ? URL.createObjectURL(file) : '');
+    setLocalPreview(URL.createObjectURL(file));
   };
 
   const validate = () => {
@@ -234,8 +257,12 @@ export default function Campaigns() {
     if (uploadSource === 'url' && !form.image_url.trim()) {
       next.image_url = 'Paste the web address of the image.';
     }
-    if (uploadSource === 'local' && !form.localFile) {
-      next.localFile = 'Choose an image file to send.';
+    if (uploadSource === 'local') {
+      // A rejected file already carries its own reason (wrong type / too
+      // large); only fall back to the generic message when nothing was
+      // picked at all.
+      if (errors.localFile) next.localFile = errors.localFile;
+      else if (!form.localFile) next.localFile = 'Choose an image file to send.';
     }
     if (!form.title.trim()) next.title = 'Enter a title.';
     if (!form.description.trim()) next.description = 'Enter a description.';
@@ -253,21 +280,33 @@ export default function Campaigns() {
     setSubmitting(true);
 
     try {
-      const payload = { ...form, type: 'poster' };
-
-      if (uploadSource === 'local') {
-        setUploading(true);
-        const { data } = await uploadImage(form.localFile);
-        payload.image_url = `${API_BASE}${data.url}`;
-        setUploading(false);
-      }
-
       // "Send now" is a schedule for this minute: the broadcaster runs on a
       // poll and picks it up on its next pass.
       const at = when === 'now' ? new Date() : new Date(form.scheduled_at);
-      delete payload.localFile;
 
-      await createCampaign({ ...payload, scheduled_at: at.toISOString() });
+      let payload;
+      if (uploadSource === 'local' && form.localFile) {
+        // The image travels with the broadcast in one multipart request and
+        // is stored as binary data in the database — never a separate
+        // pre-upload step, and never a hosted file the server has to keep in
+        // sync with the row that references it.
+        payload = new FormData();
+        payload.append('type', 'poster');
+        payload.append('title', form.title);
+        payload.append('description', form.description);
+        payload.append('scheduled_at', at.toISOString());
+        payload.append('image', form.localFile);
+      } else {
+        payload = {
+          type: 'poster',
+          title: form.title,
+          description: form.description,
+          image_url: form.image_url,
+          scheduled_at: at.toISOString(),
+        };
+      }
+
+      await createCampaign(payload);
 
       setComposerOpen(false);
       const sendingNow = when === 'now';
@@ -286,12 +325,12 @@ export default function Campaigns() {
         open: true,
         title: 'Could not send broadcast',
         message:
+          err.response?.data?.error ||
           'The broadcast was not saved, so nobody will receive it. Check that every field is filled in, then try again.',
         type: 'error',
       });
     } finally {
       setSubmitting(false);
-      setUploading(false);
     }
   };
 
@@ -418,26 +457,13 @@ export default function Campaigns() {
                 return (
                   <TableRow key={campaign.id}>
                     <TableCell>
-                      <div className="flex items-start gap-3">
-                        {campaign.image_url ? (
-                          <img
-                            src={campaign.image_url}
-                            alt=""
-                            className="size-12 shrink-0 rounded-lg bg-paper object-cover"
-                          />
-                        ) : (
-                          <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-paper text-titanium-700">
-                            <ImageIcon className="size-4" />
-                          </span>
+                      <div className="min-w-0">
+                        <p className="font-medium text-ink">{describe(campaign)}</p>
+                        {campaign.buttons?.length > 0 && (
+                          <p className="mt-1 text-[12px] leading-snug text-text-secondary">
+                            Buttons: {campaign.buttons.map((b) => b.title).join(' · ')}
+                          </p>
                         )}
-                        <div className="min-w-0">
-                          <p className="font-medium text-ink">{describe(campaign)}</p>
-                          {campaign.buttons?.length > 0 && (
-                            <p className="mt-1 text-[12px] leading-snug text-text-secondary">
-                              Buttons: {campaign.buttons.map((b) => b.title).join(' · ')}
-                            </p>
-                          )}
-                        </div>
                       </div>
                     </TableCell>
 
@@ -582,25 +608,56 @@ export default function Campaigns() {
                   ) : (
                     <>
                       <input
+                        ref={fileInputRef}
                         type="file"
-                        accept="image/*"
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
                         aria-label="Photo file"
-                        disabled={uploading}
+                        disabled={submitting}
                         onChange={(e) => chooseFile(e.target.files[0])}
-                        className="w-full rounded-lg border border-dashed border-line-strong bg-paper p-4 text-[13px] text-text-secondary file:mr-4 file:rounded-md file:border-0 file:bg-ink file:px-4 file:py-2 file:text-[12px] file:font-medium file:text-white"
+                        className={
+                          form.localFile
+                            ? 'hidden'
+                            : 'w-full rounded-lg border border-dashed border-line-strong bg-paper p-4 text-[13px] text-text-secondary file:mr-4 file:rounded-md file:border-0 file:bg-ink file:px-4 file:py-2 file:text-[12px] file:font-medium file:text-white'
+                        }
                       />
-                      {uploading && (
-                        <p className="flex items-center gap-2 text-[12px] text-text-secondary">
-                          <span className="size-3 animate-spin rounded-full border-2 border-line border-t-ink" />
-                          Uploading — this can take a moment on a slow connection.
-                        </p>
+                      {form.localFile && (
+                        <div className="flex items-center gap-3 rounded-lg border border-border bg-paper p-3">
+                          <img
+                            src={localPreview}
+                            alt=""
+                            className="size-14 shrink-0 rounded-md bg-white object-cover"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-medium text-ink">
+                              {form.localFile.name}
+                            </p>
+                            <p className="text-[12px] text-text-secondary">
+                              {formatFileSize(form.localFile.size)}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="xs"
+                              onClick={() => fileInputRef.current?.click()}
+                            >
+                              Change
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="destructive-outline"
+                              size="xs"
+                              onClick={() => chooseFile(null)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
                       )}
-                      {!uploading && form.localFile && (
-                        <p className="flex items-center gap-1.5 text-[12px] font-medium text-success">
-                          <CheckCircle2 aria-hidden="true" className="size-3.5" />
-                          {form.localFile.name}
-                        </p>
-                      )}
+                      <p className="text-[12px] text-text-secondary">
+                        JPG, PNG or WEBP, up to 2 MB.
+                      </p>
                     </>
                   )}
                   {(errors.image_url || errors.localFile) && (

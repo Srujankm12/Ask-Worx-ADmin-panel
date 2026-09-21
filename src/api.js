@@ -94,6 +94,11 @@ export const sendMessage = (phone, message) => api.post('/send-message', { phone
 
 // Campaign Management
 export const getCampaigns = (params) => api.get('/campaigns', { params });
+/**
+ * Pass a FormData instance (built by the broadcast composer when a local
+ * image is attached) to send multipart/form-data — axios sets the boundary
+ * itself. A plain object still goes as JSON, for URL-only posters and quizzes.
+ */
 export const createCampaign = (data) => api.post('/campaigns', data);
 export const deleteCampaign = (id) => api.delete(`/campaigns/${id}`);
 
