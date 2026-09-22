@@ -1,5 +1,7 @@
-import Papa from 'papaparse';
-import * as XLSX from 'xlsx';
+// papaparse, xlsx and pdfjs-dist are all loaded on demand, inside the parser
+// that needs them. Imported at the top they would sit in the main bundle, so
+// every visitor downloaded a spreadsheet reader and a PDF engine before the
+// login page could paint — for a feature reached from one dialog, on one page.
 
 export const ACCEPTED_EXTENSIONS = ['.csv', '.xlsx', '.xls', '.pdf'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB — enough for a few thousand rows
@@ -47,7 +49,8 @@ function toTable(rawRows) {
   return { columns, rows };
 }
 
-function parseCsv(file) {
+async function parseCsv(file) {
+  const { default: Papa } = await import('papaparse');
   return new Promise((resolve, reject) => {
     Papa.parse(file, {
       header: false,
@@ -66,6 +69,7 @@ function parseCsv(file) {
 }
 
 async function parseExcel(file) {
+  const XLSX = await import('xlsx');
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
 
