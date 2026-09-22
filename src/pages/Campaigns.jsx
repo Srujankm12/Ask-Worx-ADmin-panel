@@ -61,6 +61,11 @@ const emptyPoster = () => ({
 // this is only what the composer shows so the preview matches what sends.
 const DEFAULT_CLOSING = '🌐 www.askworx.in\n📧 contact@askworx.in';
 
+// Every broadcast carries this one button, so the message is not a dead end.
+// The server owns the real label (settings key poster_button); this is only
+// what the preview draws.
+const POSTER_BUTTONS = [{ title: 'About ASKworX' }];
+
 const SOURCE_TABS = [
   { value: 'url', label: 'Link' },
   { value: 'local', label: 'Upload' },
@@ -913,6 +918,7 @@ export default function Campaigns() {
                   title={form.title}
                   description={previewDescription}
                   image={previewImage}
+                  buttons={previewDescription ? POSTER_BUTTONS : undefined}
                   empty="Pick a template or write a message to see it here."
                 />
               </div>
@@ -1021,6 +1027,7 @@ export default function Campaigns() {
                       .join('\n\n')
                   }
                   image={detail.image_url}
+                  buttons={POSTER_BUTTONS}
                   empty="This broadcast has no content to show."
                 />
               </div>
