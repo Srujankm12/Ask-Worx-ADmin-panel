@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { format, parseISO } from 'date-fns';
 import {
   AlertCircle,
+  BookmarkPlus,
   CalendarClock,
   Megaphone,
   Plus,
   Send,
   Trash2,
+  Users,
 } from 'lucide-react';
 
 import {
@@ -14,6 +16,9 @@ import {
   createCampaign,
   deleteCampaign,
   getContacts,
+  getTemplates,
+  createTemplate,
+  deleteTemplate,
 } from '../api';
 import { getBroadcastStatus } from '../lib/broadcastStatus';
 import { isInWindow } from '../lib/replyWindow';
@@ -47,8 +52,14 @@ const emptyPoster = () => ({
   image_url: '',
   title: '',
   description: '',
+  links: '',
   scheduled_at: '',
 });
+
+// What closes a broadcast when its links box is left empty. The server holds
+// the real values in settings (poster_website / poster_email) and uses those;
+// this is only what the composer shows so the preview matches what sends.
+const DEFAULT_CLOSING = '🌐 www.askworx.in\n📧 contact@askworx.in';
 
 const SOURCE_TABS = [
   { value: 'url', label: 'Link' },
@@ -143,6 +154,13 @@ export default function Campaigns() {
   const [modal, setModal] = useState({ open: false, title: '', message: '', type: 'success' });
   const [confirmCancel, setConfirmCancel] = useState(null);
 
+  // Broadcasts saved to send again, and the one being looked at.
+  const [saved, setSaved] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [saveName, setSaveName] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [confirmDeleteTemplate, setConfirmDeleteTemplate] = useState(null);
+
   const load = useCallback(async () => {
     setLoadError('');
     try {
@@ -165,6 +183,22 @@ export default function Campaigns() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      const { data } = await getTemplates();
+      setSaved(Array.isArray(data) ? data : []);
+    } catch (err) {
+      // A template list that will not load is not worth an alert: the ready-made
+      // ones below still work, and so does composing from scratch.
+      console.error(err);
+      setSaved([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
 
   // While a broadcast is going out, keep the list current so it flips to
   // Sent by itself.
@@ -211,15 +245,18 @@ export default function Campaigns() {
     setComposerOpen(true);
   };
 
+  // Takes both shapes: the ready-made ones above (image) and a saved
+  // broadcast from the server (image_url, links).
   const applyTemplate = (template) => {
     setTemplateId(template.id);
     setUploadSource('url');
     setLocalPreview('');
     setForm((f) => ({
       ...f,
-      image_url: template.image,
+      image_url: template.image ?? template.image_url ?? '',
       title: template.title,
       description: template.description,
+      links: template.links ?? '',
       localFile: undefined,
     }));
     setErrors({});
@@ -294,6 +331,7 @@ export default function Campaigns() {
         payload.append('type', 'poster');
         payload.append('title', form.title);
         payload.append('description', form.description);
+        payload.append('links', form.links.trim());
         payload.append('scheduled_at', at.toISOString());
         payload.append('image', form.localFile);
       } else {
@@ -301,6 +339,7 @@ export default function Campaigns() {
           type: 'poster',
           title: form.title,
           description: form.description,
+          links: form.links.trim(),
           image_url: form.image_url,
           scheduled_at: at.toISOString(),
         };
@@ -334,6 +373,61 @@ export default function Campaigns() {
     }
   };
 
+  const handleSaveTemplate = async () => {
+    if (!detail) return;
+    const name = saveName.trim();
+    if (!name) return;
+
+    setSavingTemplate(true);
+    try {
+      await createTemplate({
+        name,
+        title: detail.title || '',
+        description: detail.description || detail.caption || '',
+        image_url: detail.image_url || '',
+        links: detail.links || '',
+      });
+      setSaveName('');
+      setDetail(null);
+      loadTemplates();
+      setModal({
+        open: true,
+        title: 'Saved as a template',
+        message: `“${name}” is now under Start from a template, ready to send again.`,
+        type: 'success',
+      });
+    } catch (err) {
+      console.error(err);
+      setModal({
+        open: true,
+        title: 'Could not save that template',
+        message:
+          err.response?.data?.error ||
+          'The template was not saved. Check the name and try again.',
+        type: 'error',
+      });
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const handleDeleteTemplate = async () => {
+    const template = confirmDeleteTemplate;
+    if (!template) return;
+    try {
+      await deleteTemplate(template.id);
+      loadTemplates();
+    } catch (err) {
+      console.error(err);
+      setModal({
+        open: true,
+        title: 'Could not delete that template',
+        message: 'It is still saved. Refresh the page and try again.',
+        type: 'error',
+      });
+    }
+  };
+
   const handleCancel = async () => {
     const campaign = confirmCancel;
     if (!campaign) return;
@@ -363,6 +457,17 @@ export default function Campaigns() {
   }, [audience]);
 
   const previewImage = uploadSource === 'local' ? localPreview : (form.image_url || '').trim();
+
+  // The preview has to show what actually sends, closing lines included, or
+  // the operator is approving something different from what goes out.
+  const previewDescription = useMemo(() => {
+    const body = (form.description || '').trim();
+    // Nothing written yet means nothing to preview — showing the closing lines
+    // on their own would hide the empty state behind a message nobody wrote.
+    if (!body && !(form.title || '').trim()) return '';
+    const closing = (form.links || '').trim() || DEFAULT_CLOSING;
+    return body ? `${body}\n\n${closing}` : closing;
+  }, [form.description, form.links, form.title]);
 
   return (
     <>
@@ -414,6 +519,51 @@ export default function Campaigns() {
               </button>
             ))}
           </div>
+
+          {saved.length > 0 && (
+            <div className="mt-5">
+              <p className="eyebrow mb-3">Saved by you</p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {saved.map((template) => (
+                  <div
+                    key={template.id}
+                    className="group relative overflow-hidden rounded-xl border border-border bg-white text-left shadow-card transition-all hover:-translate-y-0.5 hover:border-ink/30"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openComposer(template)}
+                      className="block w-full text-left"
+                    >
+                      {template.image_url ? (
+                        <img
+                          src={template.image_url}
+                          alt=""
+                          loading="lazy"
+                          className="aspect-[4/3] w-full bg-paper object-cover"
+                        />
+                      ) : (
+                        <div className="flex aspect-[4/3] w-full items-center justify-center bg-paper">
+                          <Megaphone aria-hidden="true" className="size-5 text-titanium-700" />
+                        </div>
+                      )}
+                      <p className="px-3 py-2.5 text-[13px] font-medium text-ink">
+                        {template.name}
+                      </p>
+                    </button>
+                    <Button
+                      variant="destructive-outline"
+                      size="icon-xs"
+                      aria-label={`Delete the template “${template.name}”`}
+                      onClick={() => setConfirmDeleteTemplate(template)}
+                      className="absolute right-2 top-2 bg-white/90 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       </Reveal>
 
@@ -457,14 +607,23 @@ export default function Campaigns() {
                 return (
                   <TableRow key={campaign.id}>
                     <TableCell>
-                      <div className="min-w-0">
-                        <p className="font-medium text-ink">{describe(campaign)}</p>
-                        {campaign.buttons?.length > 0 && (
-                          <p className="mt-1 text-[12px] leading-snug text-text-secondary">
-                            Buttons: {campaign.buttons.map((b) => b.title).join(' · ')}
-                          </p>
-                        )}
-                      </div>
+                      {/* The whole row opens the detail: what went out, and to
+                          how many people. */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSaveName(describe(campaign).slice(0, 60));
+                          setDetail(campaign);
+                        }}
+                        className="min-w-0 text-left"
+                      >
+                        <p className="font-medium text-ink underline-offset-4 hover:underline">
+                          {describe(campaign)}
+                        </p>
+                        <p className="mt-0.5 text-[12px] text-text-secondary">
+                          View what was sent
+                        </p>
+                      </button>
                     </TableCell>
 
                     <TableCell className="text-center">
@@ -481,7 +640,15 @@ export default function Campaigns() {
                     </TableCell>
 
                     <TableCell className="text-center tabular-nums text-text-secondary">
-                      {campaign.status === 'sent' ? campaign.total_sent : '—'}
+                      {campaign.status === 'sent' ? (
+                        <span title={`Delivered to ${campaign.total_sent} ${
+                          campaign.total_sent === 1 ? 'person' : 'people'
+                        }`}>
+                          {campaign.total_sent}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
                     </TableCell>
 
                     <TableCell className="text-right">
@@ -701,6 +868,24 @@ export default function Campaigns() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="links">
+                    Links{' '}
+                    <span className="font-normal text-text-secondary">(optional)</span>
+                  </Label>
+                  <Textarea
+                    id="links"
+                    rows={2}
+                    value={form.links || ''}
+                    onChange={(e) => setField('links', e.target.value)}
+                    placeholder={DEFAULT_CLOSING}
+                  />
+                  <p className="text-[12px] leading-relaxed text-text-secondary">
+                    Closes the message. Leave it empty and the website and email from Bot
+                    settings are used instead — shown above in grey.
+                  </p>
+                </div>
+
+                <div className="space-y-2">
                   <Label>When</Label>
                   <Tabs value={when} onValueChange={setWhen} items={WHEN_TABS} layoutId="broadcast-when" />
                   {when === 'later' && (
@@ -726,7 +911,7 @@ export default function Campaigns() {
               <div className="lg:sticky lg:top-0 lg:self-start">
                 <WhatsAppPreview
                   title={form.title}
-                  description={form.description}
+                  description={previewDescription}
                   image={previewImage}
                   empty="Pick a template or write a message to see it here."
                 />
@@ -755,6 +940,114 @@ export default function Campaigns() {
           </DialogFooter>
         </form>
       </Dialog>
+
+      {/* ── What was sent, and to how many people ───────────────────── */}
+      <Dialog open={!!detail} onClose={() => setDetail(null)} size="lg" labelledBy="detail-title">
+        {detail && (
+          <>
+            <DialogHeader
+              id="detail-title"
+              eyebrow="Broadcast"
+              title={describe(detail)}
+              description={`${
+                getBroadcastStatus(
+                  detail.status === 'scheduled' && isDue(detail) ? 'sending' : detail.status,
+                ).label
+              }${
+                detail.scheduled_at
+                  ? ` · ${format(parseISO(detail.scheduled_at), "d MMMM yyyy 'at' h:mm a")}`
+                  : ''
+              }`}
+              onClose={() => setDetail(null)}
+            />
+
+            <DialogBody>
+              <div className="grid gap-6 lg:grid-cols-2">
+                <div className="space-y-4">
+                  <div className="flex items-start gap-3 rounded-xl border border-border bg-paper px-4 py-3">
+                    <Users aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-titanium-700" />
+                    <div>
+                      <p className="text-[13px] font-medium text-ink">
+                        {detail.status === 'sent'
+                          ? `Delivered to ${detail.total_sent} ${
+                              detail.total_sent === 1 ? 'person' : 'people'
+                            }`
+                          : detail.status === 'cancelled'
+                            ? 'Cancelled — it was never sent'
+                            : 'Not sent yet'}
+                      </p>
+                      <p className="mt-0.5 text-[12px] leading-relaxed text-text-secondary">
+                        {detail.status === 'sent'
+                          ? 'Everyone who was inside the 24-hour window when it went out.'
+                          : 'The count is fixed when the broadcast goes out.'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="eyebrow">Save for later</p>
+                    <div className="flex gap-2">
+                      <Input
+                        aria-label="Template name"
+                        value={saveName}
+                        onChange={(e) => setSaveName(e.target.value)}
+                        placeholder="Name this template"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleSaveTemplate}
+                        disabled={savingTemplate || !saveName.trim()}
+                      >
+                        <BookmarkPlus />
+                        {savingTemplate ? 'Saving…' : 'Save'}
+                      </Button>
+                    </div>
+                    <p className="text-[12px] leading-relaxed text-text-secondary">
+                      Keeps the words, the image and the links, so you can send the same
+                      thing again without writing it out.
+                    </p>
+                  </div>
+                </div>
+
+                <WhatsAppPreview
+                  title={detail.title}
+                  description={
+                    [
+                      (detail.description || detail.caption || '').trim(),
+                      (detail.links || '').trim() || DEFAULT_CLOSING,
+                    ]
+                      .filter(Boolean)
+                      .join('\n\n')
+                  }
+                  image={detail.image_url}
+                  empty="This broadcast has no content to show."
+                />
+              </div>
+            </DialogBody>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDetail(null)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </Dialog>
+
+      <ConfirmModal
+        isOpen={!!confirmDeleteTemplate}
+        onClose={() => setConfirmDeleteTemplate(null)}
+        onConfirm={handleDeleteTemplate}
+        type="danger"
+        title="Delete this template?"
+        message={
+          confirmDeleteTemplate
+            ? `“${confirmDeleteTemplate.name}” will no longer appear under Start from a template. Broadcasts already sent from it are not affected.`
+            : ''
+        }
+        confirmText="Delete template"
+      />
 
       <ConfirmModal
         isOpen={!!confirmCancel}

@@ -97,10 +97,16 @@ export const getCampaigns = (params) => api.get('/campaigns', { params });
 /**
  * Pass a FormData instance (built by the broadcast composer when a local
  * image is attached) to send multipart/form-data — axios sets the boundary
- * itself. A plain object still goes as JSON, for URL-only posters and quizzes.
+ * itself. A plain object still goes as JSON, for posters that use a pasted
+ * image link.
  */
 export const createCampaign = (data) => api.post('/campaigns', data);
 export const deleteCampaign = (id) => api.delete(`/campaigns/${id}`);
+
+// Saved broadcast templates, to send the same thing again later.
+export const getTemplates = () => api.get('/templates');
+export const createTemplate = (data) => api.post('/templates', data);
+export const deleteTemplate = (id) => api.delete(`/templates/${id}`);
 
 // Employee Management
 export const getEmployees = (params) => api.get('/employees', { params });

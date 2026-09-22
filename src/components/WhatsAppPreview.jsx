@@ -98,7 +98,7 @@ export function WhatsAppPreview({
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <p className="spec-label">As the customer sees it</p>
         {countSource && (
-          <p className="font-mono text-[10px] tabular-nums text-titanium-700">
+          <p className="whitespace-nowrap font-mono text-[10px] tabular-nums text-titanium-700">
             {countSource.length} chars · {countSource.split('\n').length} lines
           </p>
         )}
